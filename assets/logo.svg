@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="画境标识">
+  <defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#718bff"/><stop offset="1" stop-color="#4254c7"/></linearGradient><linearGradient id="ribbon" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#fff"/><stop offset="1" stop-color="#c4d8ff"/></linearGradient></defs>
+  <rect x="4" y="4" width="120" height="120" rx="31" fill="url(#bg)"/>
+  <path d="M35 32h44l15 15v11H82V48H44v40h38V77h12v19H35z" fill="url(#ribbon)"/>
+  <path d="m27 89 28-30 19 17 25-29 9 8-33 38-19-17-20 22z" fill="#fff"/>
+  <path d="m74 76 9-10 9 8-9 10z" fill="#a8bfff"/>
+  <circle cx="61" cy="49" r="5" fill="#c5e1ff"/>
+</svg>
