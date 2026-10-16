@@ -9,7 +9,7 @@ const imageModels = [
   { id: 'gemini-3.1-flash-image-preview', label: 'Gemini 3.1 Flash Image', family: 'Gemini', adapter: 'gemini', refs: true, ratios: ['1:1','16:9','9:16','4:3','3:4','3:2','2:3','21:9'] },
   { id: 'gemini-3.1-flash-lite-image', label: 'Gemini 3.1 Flash Lite', family: 'Gemini', adapter: 'gemini', refs: true, ratios: ['1:1','16:9','9:16','4:3','3:4','3:2','2:3','21:9'] },
   { id: 'doubao-seedream-4-0-250828', label: 'Seedream 4.0', family: 'Seedream', adapter: 'images', refs: true, ratios: ['1:1','16:9','9:16','4:3','3:4','3:2','2:3','21:9'] },
-  { id: 'seedream-4-0-250828', label: 'Seedream 4.0（别名）', family: 'Seedream', adapter: 'images', refs: true, ratios: ['1:1','16:9','9:16','4:3','3:4','3:2','2:3','21:9'] },
+  { id: 'seedream-4-0-250828', label: 'Seedream 4.0????', family: 'Seedream', adapter: 'images', refs: true, ratios: ['1:1','16:9','9:16','4:3','3:4','3:2','2:3','21:9'] },
   { id: 'doubao-seedream-4-5-251128', label: 'Seedream 4.5', family: 'Seedream', adapter: 'images', refs: true, ratios: ['1:1','16:9','9:16','4:3','3:4','3:2','2:3','21:9'] },
   { id: 'doubao-seedream-5-0-260128', label: 'Seedream 5.0', family: 'Seedream', adapter: 'images', refs: true, ratios: ['1:1','16:9','9:16','4:3','3:4','3:2','2:3','21:9'] },
   { id: 'grok-4-2-image', label: 'Grok 4.2 Image', family: 'Grok', adapter: 'images', refs: true, ratios: ['1:1','16:9','9:16','4:3','3:4','3:2','2:3','21:9'] },
@@ -23,8 +23,8 @@ const imageModels = [
   { id: 'GG-3.1', label: 'GG 3.1', family: 'Gemini GG', adapter: 'task-image', refs: true, ratios: ['1:1','16:9','9:16','4:3','3:4','3:2','2:3'] },
   { id: 'gg-3.1-4k', label: 'GG 3.1 4K', family: 'Gemini GG', adapter: 'task-image', refs: true, ratios: ['1:1','16:9','9:16','4:3','3:4','3:2','2:3'] },
   { id: 'gpt-image-1', label: 'GPT Image 1', family: 'OpenAI Images', adapter: 'legacy-images', refs: true, ratios: ['1:1','3:2','2:3'] },
-  { id: 'dall-e-3', label: 'DALL·E 3', family: 'OpenAI Images', adapter: 'legacy-images', refs: false, ratios: ['1:1','3:2','2:3'] },
-  { id: 'dall-e-2', label: 'DALL·E 2', family: 'OpenAI Images', adapter: 'legacy-images', refs: true, ratios: ['1:1'] },
+  { id: 'dall-e-3', label: 'DALL?E 3', family: 'OpenAI Images', adapter: 'legacy-images', refs: false, ratios: ['1:1','3:2','2:3'] },
+  { id: 'dall-e-2', label: 'DALL?E 2', family: 'OpenAI Images', adapter: 'legacy-images', refs: true, ratios: ['1:1'] },
   { id: 'midjourney', label: 'Midjourney Imagine', family: 'Midjourney', adapter: 'midjourney', refs: true, ratios: ['1:1','16:9','9:16','4:3','3:4','3:2','2:3','21:9'] }
 ];
 
@@ -51,7 +51,7 @@ const videoModels = [
 ];
 
 const presets = [
-  ['auto','auto','自动识别'], ['1:1','1024x1024','1:1'], ['16:9','1672x941','16:9'],
+  ['auto','auto','????'], ['1:1','1024x1024','1:1'], ['16:9','1672x941','16:9'],
   ['9:16','941x1672','9:16'], ['4:3','1443x1090','4:3'], ['3:4','1090x1443','3:4'],
   ['3:2','1536x1024','3:2'], ['2:3','1024x1536','2:3'], ['5:4','1408x1120','5:4'],
   ['4:5','1120x1408','4:5'], ['21:9','1920x832','21:9'], ['9:21','832x1920','9:21'],

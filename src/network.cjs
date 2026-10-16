@@ -27,9 +27,9 @@ async function networkFetch(url, options = {}) {
     return await fetch(url, { ...options, dispatcher: await dispatcherFor(url) });
   } catch (error) {
     if (error.name === 'AbortError' || error.name === 'TimeoutError') {
-      throw new Error('连接接口超时，请检查网络或代理设置', { cause: error });
+      throw new Error('?????????????????', { cause: error });
     }
-    throw new Error('无法连接接口，请检查网络、系统代理及接口地址', { cause: error });
+    throw new Error('??????????????????????', { cause: error });
   }
 }
 

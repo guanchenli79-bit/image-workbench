@@ -15,9 +15,9 @@ function autoRatio(prompt, reference) {
     return '1:1';
   }
   const p = String(prompt || '').toLowerCase();
-  if (/竖屏|纵向|手机壁纸|portrait|vertical|9\s*:\s*16/.test(p)) return '9:16';
-  if (/横屏|横版|宽屏|电影感|landscape|cinematic|16\s*:\s*9/.test(p)) return '16:9';
-  if (/方形|正方形|square|1\s*:\s*1/.test(p)) return '1:1';
+  if (/??|??|????|portrait|vertical|9\s*:\s*16/.test(p)) return '9:16';
+  if (/??|??|??|???|landscape|cinematic|16\s*:\s*9/.test(p)) return '16:9';
+  if (/??|???|square|1\s*:\s*1/.test(p)) return '1:1';
   return '1:1';
 }
 

@@ -37,7 +37,7 @@ async function writeJson(file, data) {
 }
 function encrypted(value) {
   if (!value) return '';
-  if (!safeStorage.isEncryptionAvailable()) throw new Error('系统安全存储暂不可用，API Key 未保存');
+  if (!safeStorage.isEncryptionAvailable()) throw new Error('???????????API Key ???');
   return safeStorage.encryptString(value).toString('base64');
 }
 function decrypted(value) {
@@ -69,25 +69,25 @@ function listHistory() { return records.map(({files:mediaFiles,...rest})=>({...r
 function availableMedia(id,index) {
   const record=records.find(x=>x.id===id && x.status==='complete' && Date.now()<x.expiresAt);
   const name=Number.isInteger(index) && index>=0 ? record?.files?.[index] : null;
-  if(!name)throw new Error('生成文件已过期或不存在，请重新生成');
+  if(!name)throw new Error('?????????????????');
   return {record,file:path.join(files().media,name)};
 }
 async function saveResult(id,index) {
   const {record,file}=availableMedia(id,index);
   const ext=path.extname(file);
-  const chosen=await dialog.showSaveDialog(mainWindow,{title:'永久保存作品',defaultPath:`${record.modelId}-${new Date(record.createdAt).toISOString().slice(0,10)}${ext}`,filters:[{name:record.type==='video'?'视频':'图片',extensions:[ext.slice(1)]}]});
+  const chosen=await dialog.showSaveDialog(mainWindow,{title:'??????',defaultPath:`${record.modelId}-${new Date(record.createdAt).toISOString().slice(0,10)}${ext}`,filters:[{name:record.type==='video'?'??':'??',extensions:[ext.slice(1)]}]});
   if(chosen.canceled)return false;
   await fsp.copyFile(file,chosen.filePath);return true;
 }
 async function copyImage(id,index) {
   const {record,file}=availableMedia(id,index);
-  if(record.type!=='image')throw new Error('仅图片支持复制到剪贴板');
+  if(record.type!=='image')throw new Error('???????????');
   const original=await fsp.readFile(file);
   const image=nativeImage.createFromBuffer(original);
-  if(image.isEmpty())throw new Error('此图片格式无法复制，请保存原文件');
+  if(image.isEmpty())throw new Error('????????????????');
   const png=original.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10]))?original:image.toPNG();
   await clipboard.write([new ClipboardItem({'image/png':new Blob([png],{type:'image/png'})})]);
-  emit('app:notice','图像已复制，保留原始尺寸与比例，可直接粘贴');
+  emit('app:notice','?????????????????????');
 }
 
 async function pruneExpired() {
@@ -112,17 +112,17 @@ function extension(mime,type,buffer) {
 }
 async function resultBuffer(settingsSnapshot,item,type) {
   if (item.b64) return Buffer.from(item.b64.replace(/^data:[^,]+,/i,''),'base64');
-  if (!item.url) throw new Error('生成结果缺少文件地址');
+  if (!item.url) throw new Error('??????????');
   const url = new URL(item.url);
-  if(url.protocol!=='https:' && !(url.protocol==='http:' && ['localhost','127.0.0.1'].includes(url.hostname)))throw new Error('生成文件地址不安全');
+  if(url.protocol!=='https:' && !(url.protocol==='http:' && ['localhost','127.0.0.1'].includes(url.hostname)))throw new Error('?????????');
   const sameOrigin = url.origin === new URL(normalizeBase(settingsSnapshot.baseUrl)).origin;
   const response = await networkFetch(url,{headers:sameOrigin?{Authorization:`Bearer ${settingsSnapshot.apiKey}`}:{},signal:AbortSignal.timeout(type==='video'?240000:90000)});
-  if(!response.ok)throw new Error(`下载生成结果失败（HTTP ${response.status}）`);
+  if(!response.ok)throw new Error(`?????????HTTP ${response.status}?`);
   const limit=type==='video'?MAX_VIDEO_BYTES:MAX_IMAGE_BYTES;
   const size=Number(response.headers.get('content-length')||0);
-  if(size>limit)throw new Error('生成文件超过本地缓存大小限制');
+  if(size>limit)throw new Error('??????????????');
   const chunks=[];let total=0;
-  for await (const chunk of response.body) { total+=chunk.length; if(total>limit)throw new Error('生成文件超过本地缓存大小限制'); chunks.push(Buffer.from(chunk)); }
+  for await (const chunk of response.body) { total+=chunk.length; if(total>limit)throw new Error('??????????????'); chunks.push(Buffer.from(chunk)); }
   return Buffer.concat(chunks);
 }
 async function completeRecord(record,items,settingsSnapshot) {
@@ -131,14 +131,14 @@ async function completeRecord(record,items,settingsSnapshot) {
   const active=()=>epoch===historyEpoch&&records.includes(record);
   try {
     for(let i=0;i<items.length;i++) {
-      if(!active())throw new Error('任务已从历史中清除');
+      if(!active())throw new Error('?????????');
       const buffer=await resultBuffer(settingsSnapshot,items[i],record.type);
-      if(!active())throw new Error('任务已从历史中清除');
+      if(!active())throw new Error('?????????');
       const name=`${record.id}-${i}${extension(items[i].mime,record.type,buffer)}`;
       await fsp.writeFile(path.join(files().media,name),buffer);
       names.push(name);
     }
-    if(!active())throw new Error('任务已从历史中清除');
+    if(!active())throw new Error('?????????');
     record.files=names; record.status='complete'; record.progress=100;
     record.completedAt=Date.now(); record.expiresAt=record.completedAt+TTL;
     await persistRecords();
@@ -166,7 +166,7 @@ async function pollTasks() {
 }
 
 function createWindow() {
-  mainWindow=new BrowserWindow({width:1440,height:900,minWidth:1050,minHeight:700,backgroundColor:'#f5f6f8',title:'画境工作台',icon:path.join(__dirname,'..','assets','logo.ico'),autoHideMenuBar:true,
+  mainWindow=new BrowserWindow({width:1440,height:900,minWidth:1050,minHeight:700,backgroundColor:'#f5f6f8',title:'?????',icon:path.join(__dirname,'..','assets','logo.ico'),autoHideMenuBar:true,
     webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
   mainWindow.loadFile(path.join(__dirname,'renderer','index.html'));
   mainWindow.webContents.setWindowOpenHandler(({url})=>{ if(url.startsWith('https://docs.geeknow.ai/'))shell.openExternal(url); return {action:'deny'}; });
@@ -179,8 +179,8 @@ function createWindow() {
     const index=Number(indexRaw);
     const run=action=>()=>action(id,index).catch(error=>emit('app:notice',error.message));
     Menu.buildFromTemplate([
-      {label:'复制图像（原尺寸）',click:run(copyImage)},
-      {label:'保存原图到电脑…',click:run(saveResult)}
+      {label:'?????????',click:run(copyImage)},
+      {label:'????????',click:run(saveResult)}
     ]).popup({window:mainWindow});
   });
 }
@@ -190,7 +190,7 @@ function registerIpc() {
   ipcMain.handle('settings:save',async(_,input)=>{
     const baseUrl=normalizeBase(input.baseUrl);
     const apiKey=String(input.apiKey||'').trim();
-    if(apiKey && !safeStorage.isEncryptionAvailable())throw new Error('系统安全存储不可用，无法保存 API Key');
+    if(apiKey && !safeStorage.isEncryptionAvailable())throw new Error('?????????????? API Key');
     settings.baseUrl=baseUrl;
     if(apiKey)settings.apiKey=apiKey;
     if(input.clearKey)settings.apiKey='';
@@ -198,18 +198,18 @@ function registerIpc() {
   });
   ipcMain.handle('settings:verify',async(_,input)=>{
     const candidate={baseUrl:normalizeBase(input.baseUrl),apiKey:String(input.apiKey||'').trim()||settings.apiKey};
-    if(!candidate.apiKey)throw new Error('请先输入 API Key');
+    if(!candidate.apiKey)throw new Error('???? API Key');
     const data=await requestJson(candidate,'/v1/models',{method:'GET',signal:AbortSignal.timeout(25000)});
     return {ok:true,modelCount:Array.isArray(data?.data)?data.data.length:null};
   });
   ipcMain.handle('size:resolve',async(_,input)=>{const model=[...imageModels,...videoModels].find(x=>x.id===input.modelId);return model?resolveSize(model,input.presetId,input.prompt,input.referenceDimensions):null;});
   ipcMain.handle('reference:choose',async()=>{
-    const picked=await dialog.showOpenDialog(mainWindow,{title:'选择参考图',properties:['openFile','multiSelections'],filters:[{name:'图片',extensions:['png','jpg','jpeg','webp']}]});
+    const picked=await dialog.showOpenDialog(mainWindow,{title:'?????',properties:['openFile','multiSelections'],filters:[{name:'??',extensions:['png','jpg','jpeg','webp']}]});
     if(picked.canceled)return [];
     const result=[];
     for(const file of picked.filePaths.slice(0,10)){
       const buffer=await fsp.readFile(file);
-      if(buffer.length>10*1024*1024)throw new Error('单张参考图不能超过 10 MB');
+      if(buffer.length>10*1024*1024)throw new Error('????????? 10 MB');
       const ext=path.extname(file).toLowerCase();const mime=ext==='.png'?'image/png':ext==='.webp'?'image/webp':'image/jpeg';
       const id=crypto.randomUUID(); refs.set(id,{buffer,mime,name:path.basename(file),addedAt:Date.now()});
       result.push({id,name:path.basename(file),preview:`data:${mime};base64,${buffer.toString('base64')}`});
@@ -221,13 +221,13 @@ function registerIpc() {
     await pruneExpired();
     const type=input.type==='video'?'video':'image';
     const model=(type==='video'?videoModels:imageModels).find(x=>x.id===input.modelId);
-    if(!model)throw new Error('请选择可用模型');
-    const prompt=String(input.prompt||'').trim();if(!prompt)throw new Error('请填写提示词');
-    if(prompt.length>8000)throw new Error('提示词过长');
+    if(!model)throw new Error('???????');
+    const prompt=String(input.prompt||'').trim();if(!prompt)throw new Error('??????');
+    if(prompt.length>8000)throw new Error('?????');
     const references=(input.referenceIds||[]).map(id=>refs.get(id)).filter(Boolean);
-    if(references.length>10)throw new Error('参考图最多支持 10 张');
-    if(references.length && !model.refs)throw new Error('该模型不支持参考图');
-    if(model.requiredRefs && !references.length)throw new Error('该模型需要至少一张参考图');
+    if(references.length>10)throw new Error('??????? 10 ?');
+    if(references.length && !model.refs)throw new Error('?????????');
+    if(model.requiredRefs && !references.length)throw new Error('????????????');
     const sizing=resolveSize(model,input.presetId,prompt,input.referenceDimensions);
     const snapshot={...settings};
     const record={id:crypto.randomUUID(),type,modelId:model.id,modelName:model.label,prompt,presetId:input.presetId,actualRatio:sizing.ratio,actualSize:sizing.size,status:'submitting',progress:0,createdAt:Date.now(),files:[]};
@@ -244,7 +244,7 @@ function registerIpc() {
   ipcMain.handle('history:clear',async()=>{
     const count=records.length;
     if(count){
-      const {response}=await dialog.showMessageBox(mainWindow,{type:'warning',title:'清空历史任务？',message:`确定清空全部 ${count} 条历史任务吗？`,detail:'未另存的本机临时图片和视频会一起删除，无法恢复。正在生成的服务端任务可能继续运行。',buttons:['取消','清空历史'],defaultId:0,cancelId:0,noLink:true});
+      const {response}=await dialog.showMessageBox(mainWindow,{type:'warning',title:'???????',message:`?????? ${count} ???????`,detail:'?????????????????????????????????????????',buttons:['??','????'],defaultId:0,cancelId:0,noLink:true});
       if(response!==1)return {cleared:false,count:0};
     }
     historyEpoch++;
@@ -257,9 +257,9 @@ function registerIpc() {
     return {cleared:true,count};
   });
   ipcMain.handle('history:save',async(_,id,index)=>saveResult(id,index));
-  ipcMain.handle('updates:check',async()=>{if(!app.isPackaged)return {message:'开发模式不检查更新'};await autoUpdater.checkForUpdates();return {message:'正在检查更新'};});
-  ipcMain.handle('updates:download',async()=>{if(!app.isPackaged||!availableUpdate)throw new Error('当前没有可下载的新版本');await autoUpdater.downloadUpdate();return {message:'更新已下载'};});
-  ipcMain.handle('updates:install',()=>{if(!app.isPackaged||!updateReady)throw new Error('更新尚未下载完成');autoUpdater.quitAndInstall(false,true);});
+  ipcMain.handle('updates:check',async()=>{if(!app.isPackaged)return {message:'?????????'};await autoUpdater.checkForUpdates();return {message:'??????'};});
+  ipcMain.handle('updates:download',async()=>{if(!app.isPackaged||!availableUpdate)throw new Error('???????????');await autoUpdater.downloadUpdate();return {message:'?????'};});
+  ipcMain.handle('updates:install',()=>{if(!app.isPackaged||!updateReady)throw new Error('????????');autoUpdater.quitAndInstall(false,true);});
 }
 
 app.whenReady().then(async()=>{
