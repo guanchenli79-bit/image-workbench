@@ -6,6 +6,7 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: workbench-media:; media-src 'self' workbench-media:; style-src 'self'; script-src 'self'; connect-src 'self'">
   <title>画境工作台</title>
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="theme.css">
 </head>
 <body>
   <div class="app-shell">
@@ -16,7 +17,7 @@
         <button class="nav-item" data-view="video" type="button">视频生成</button>
         <button class="nav-item" data-view="history" type="button">全部历史</button>
       </nav>
-      <div class="top-actions"><span class="connection" id="connectionPill"><i></i> 尚未连接 API</span><button class="settings-button" id="settingsButton" type="button">设置 API Key <span>↗</span></button></div>
+      <div class="top-actions"><span class="connection" id="connectionPill"><i></i> 尚未连接 API</span><button class="update-button" id="updateButton" type="button" hidden>发现新版本</button><button class="theme-toggle" id="themeToggle" type="button" aria-pressed="false">☾ 深色模式</button><button class="settings-button" id="settingsButton" type="button">设置 API Key <span>↗</span></button></div>
     </header>
 
     <div class="notice" role="note"><span class="notice-icon">!</span><strong>生成内容会在两小时后自动删除，请及时保存。</strong><span class="notice-detail">本机临时文件从完成时起计时</span></div>
@@ -48,7 +49,7 @@
           </section>
           <div class="action-bar"><div class="action-explain"><span class="action-dot"></span><span id="actionHint">准备就绪，开始创作你的图像</span></div><label id="secondsLabel" class="duration-control" hidden>时长 <select id="secondsSelect"></select> 秒</label><button class="generate-button" id="generateButton" type="button"><span>✦</span> 立即生成 <span class="button-arrow">↗</span></button></div>
         </section>
-        <section class="workspace-view history-full" id="historyView" hidden><div class="panel-heading-main"><div><span class="eyebrow">YOUR CREATIONS</span><h1>生成历史</h1></div><span class="panel-counter">02 / HISTORY</span></div><p class="history-intro">所有任务都会记录在这里。生成文件两小时后自动清理。</p><div id="historyFullList" class="history-grid"></div></section>
+        <section class="workspace-view history-full" id="historyView" hidden><div class="panel-heading-main"><div><span class="eyebrow">YOUR CREATIONS</span><h1>生成历史</h1></div><button class="clear-history-button" id="clearHistoryButton" type="button">清空历史</button></div><p class="history-intro">所有任务都会记录在这里。生成文件两小时后自动清理。</p><div id="historyFullList" class="history-grid"></div></section>
       </main>
     </div>
   </div>
@@ -57,6 +58,7 @@
     <label class="field-label" for="baseUrlInput">接口地址</label><input id="baseUrlInput" type="url" value="https://www.geeknow.top" required><small class="input-note">按 Geeknow 官方文档预填。如接口地址变更，可在这里修改。</small>
     <div class="modal-actions"><button type="button" class="ghost-button" id="clearKeyButton">清除 Key</button><div class="settings-actions"><button type="button" class="ghost-button" id="verifyKeyButton">测试连接</button><button type="submit" class="primary-button">保存设置</button></div></div>
   </form></dialog>
+  <dialog id="updateDialog" class="modal update-modal" aria-labelledby="updateTitle"><div class="modal-head"><div><span class="eyebrow">APP UPDATE</span><h2 id="updateTitle">发现新版本</h2></div><button class="modal-close" id="closeUpdateDialog" type="button" aria-label="关闭">×</button></div><p class="modal-intro" id="updateDescription">新版本已经发布，你可以选择何时更新。</p><div class="modal-actions"><button type="button" class="ghost-button" id="updateLaterButton">稍后再说</button><button type="button" class="primary-button" id="updateActionButton">下载更新</button></div></dialog>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <script src="app.js"></script>
 </body>
