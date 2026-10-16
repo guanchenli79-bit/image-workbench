@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, safeStorage, protocol, net, shell, Menu, clipboard, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, safeStorage, protocol, net, shell, Menu, clipboard, ClipboardItem, nativeImage } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const fsp = require('node:fs/promises');
 const path = require('node:path');
@@ -8,6 +8,7 @@ const { imageModels, videoModels, presets } = require('./catalog.cjs');
 const { resolveSize } = require('./sizing.cjs');
 const { normalizeBase, requestJson, generateImage, generateVideo, queryTask } = require('./api.cjs');
 const { networkFetch } = require('./network.cjs');
+const { recoverSubmittedMidjourney } = require('./recovery.cjs');
 
 protocol.registerSchemesAsPrivileged([{scheme:'workbench-media',privileges:{secure:true,standard:true,supportFetchAPI:true,stream:true}}]);
 
@@ -49,6 +50,7 @@ async function loadState() {
   await fsp.mkdir(p.media,{recursive:true});
   try { const stored=JSON.parse(await fsp.readFile(p.settings,'utf8')); settings={baseUrl:normalizeBase(stored.baseUrl),apiKey:decrypted(stored.apiKey)}; } catch {}
   try { records=JSON.parse(await fsp.readFile(p.history,'utf8')); if(!Array.isArray(records))records=[]; } catch { records=[]; }
+  if(recoverSubmittedMidjourney(records))await persistRecords();
   await pruneExpired();
 }
 async function persistSettings() {
@@ -83,7 +85,8 @@ async function copyImage(id,index) {
   const original=await fsp.readFile(file);
   const image=nativeImage.createFromBuffer(original);
   if(image.isEmpty())throw new Error('此图片格式无法复制，请保存原文件');
-  clipboard.writeImage(image);
+  const png=original.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10]))?original:image.toPNG();
+  await clipboard.write([new ClipboardItem({'image/png':new Blob([png],{type:'image/png'})})]);
   emit('app:notice','图像已复制，保留原始尺寸与比例，可直接粘贴');
 }
 

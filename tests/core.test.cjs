@@ -4,7 +4,8 @@ const http=require('node:http');
 const net=require('node:net');
 const {imageModels,presets}=require('../src/catalog.cjs');
 const {autoRatio,resolveSize}=require('../src/sizing.cjs');
-const {normalizeBase,requestJson}=require('../src/api.cjs');
+const {normalizeBase,requestJson,generateImage,queryTask}=require('../src/api.cjs');
+const {recoverSubmittedMidjourney}=require('../src/recovery.cjs');
 
 test('用户要求的 auto 和 13 个固定画幅全部存在',()=>{
   assert.deepEqual(presets.map(x=>x.dimensions),['auto','1024x1024','1672x941','941x1672','1443x1090','1090x1443','1536x1024','1024x1536','1408x1120','1120x1408','1920x832','832x1920','1792x896','896x1792']);
@@ -32,6 +33,28 @@ test('API Key 用 Bearer 头发送到指定基础地址',async()=>{
   finally{await new Promise(resolve=>server.close(resolve));}
 });
 test('远程 HTTP 接口不可接收 API Key',()=>assert.throws(()=>normalizeBase('http://example.com'),/HTTPS/));
+test('Midjourney 的纯文本 JSON 提交成功响应会保留任务 ID',async()=>{
+  const server=http.createServer((req,res)=>{res.setHeader('Content-Type','text/plain');res.end(JSON.stringify({code:1,description:'Submit success',result:'1792115316238633'}));});
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+  try {
+    const result=await generateImage({baseUrl:`http://127.0.0.1:${server.address().port}`,apiKey:'test'}, {prompt:'山海'}, {adapter:'midjourney'}, {ratio:'1:1'}, []);
+    assert.deepEqual(result,{kind:'task',taskId:'1792115316238633',taskAdapter:'midjourney'});
+  } finally {await new Promise(resolve=>server.close(resolve));}
+});
+test('Midjourney 任务查询可解析纯文本 JSON',async()=>{
+  const server=http.createServer((req,res)=>{res.setHeader('Content-Type','text/plain');res.end(JSON.stringify({status:'SUCCESS',imageUrl:'https://example.com/result.png'}));});
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+  try {
+    const result=await queryTask({baseUrl:`http://127.0.0.1:${server.address().port}`,apiKey:'test'},'midjourney','1792115316238633','image');
+    assert.equal(result.status,'complete');assert.equal(result.items[0].url,'https://example.com/result.png');
+  } finally {await new Promise(resolve=>server.close(resolve));}
+});
+test('误判失败的 Midjourney 提交可恢复为待查询任务',()=>{
+  const records=[{status:'failed',modelId:'midjourney',error:JSON.stringify({code:1,description:'Submit success',result:'1792115316238633'})}];
+  assert.equal(recoverSubmittedMidjourney(records),1);
+  assert.equal(records[0].status,'pending');assert.equal(records[0].taskId,'1792115316238633');
+  assert.equal(records[0].error,undefined);
+});
 test('请求会经过 HTTP_PROXY 指定的代理',async()=>{
   const target=http.createServer((req,res)=>{res.setHeader('Content-Type','application/json');res.end(JSON.stringify({data:[]}));});
   const proxy=http.createServer();

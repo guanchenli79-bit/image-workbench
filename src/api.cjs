@@ -28,8 +28,12 @@ async function requestJson(settings, route, options = {}) {
     },
     signal: options.signal || AbortSignal.timeout(180000)
   });
-  const type = response.headers.get('content-type') || '';
-  const data = type.includes('json') ? await response.json() : { message: (await response.text()).slice(0,300) };
+  const body = await response.text();
+  let data;
+  try { data = JSON.parse(body); } catch { data = { message: body.slice(0,300) }; }
+  if (typeof data === 'string') {
+    try { data = JSON.parse(data); } catch { data = { message: data.slice(0,300) }; }
+  }
   if (!response.ok || data?.success === false || data?.error) throw new Error(errorText(data, response.status));
   return data;
 }
