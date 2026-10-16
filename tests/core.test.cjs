@@ -60,3 +60,21 @@ test('请求会经过 HTTP_PROXY 指定的代理',async()=>{
     }
   } finally {proxy.closeAllConnections();target.closeAllConnections();await Promise.all([new Promise(resolve=>proxy.close(resolve)),new Promise(resolve=>target.close(resolve))]);}
 });
+test('桌面启动无代理环境变量时使用 Electron 系统代理解析器',async()=>{
+  const modulePath=require.resolve('../src/network.cjs');
+  const electronPath=require.resolve('electron');
+  const originalElectron=require.cache[electronPath];
+  const previous=process.env.HTTPS_PROXY;
+  try {
+    delete process.env.HTTPS_PROXY;
+    require.cache[electronPath]={id:electronPath,filename:electronPath,loaded:true,exports:{session:{defaultSession:{resolveProxy:async()=> 'PROXY 127.0.0.1:7897; DIRECT'}}}};
+    delete require.cache[modulePath];
+    const {dispatcherFor}=require('../src/network.cjs');
+    const dispatcher=await dispatcherFor('https://www.geeknow.top/v1/models');
+    assert.equal(dispatcher.constructor.name,'ProxyAgent');
+  } finally {
+    if(previous===undefined)delete process.env.HTTPS_PROXY;else process.env.HTTPS_PROXY=previous;
+    if(originalElectron)require.cache[electronPath]=originalElectron;else delete require.cache[electronPath];
+    delete require.cache[modulePath];
+  }
+});
