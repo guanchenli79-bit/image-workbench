@@ -12,7 +12,12 @@ function normalizeBase(value) {
 }
 
 function errorText(data, status) {
-  return data?.error?.message || data?.message || data?.description || `API 请求失败（HTTP ${status}）`;
+  const raw = String(data?.error?.message || data?.message || data?.description || `API 请求失败（HTTP ${status}）`);
+  if (/rejected by the safety system/i.test(raw)) {
+    const requestId = /request ID\s+([\da-f-]{20,})/i.exec(raw)?.[1];
+    return `上游安全系统拒绝了这次生成。请检查并调整提示词或参考图；如果认为误判，请联系 Geeknow 客服${requestId ? `，附上请求 ID：${requestId}` : ''}。`;
+  }
+  return raw;
 }
 
 async function requestJson(settings, route, options = {}) {
@@ -47,6 +52,28 @@ function imageItems(data) {
 }
 
 function dataUri(ref) { return `data:${ref.mime};base64,${ref.buffer.toString('base64')}`; }
+const MIDJOURNEY_REQUEST_FAILED = 'Midjourney 上游处理这次生成请求失败（do_request_failed）。请尝试精简提示词、减少参考图；若持续出现，请将发生时间和错误码提交给 Geeknow 客服。';
+
+async function uploadMidjourneyReferences(settings, references) {
+  const urls = [];
+  for (let index = 0; index < references.length; index++) {
+    let data;
+    try {
+      data = await requestJson(settings, '/mj/submit/upload-discord-images', {
+        method:'POST', body:JSON.stringify({mode:'FAST',base64Array:[dataUri(references[index])]})
+      });
+    } catch (error) {
+      throw new Error(`Midjourney 第 ${index + 1} 张参考图上传失败：${error.message}`, {cause:error});
+    }
+    const result = data?.result;
+    const url = Array.isArray(result) ? result[0] : null;
+    if (![1,21,22].includes(Number(data?.code)) || typeof url !== 'string' || !/^https:\/\//i.test(url)) {
+      throw new Error(`Midjourney 第 ${index + 1} 张参考图上传失败：${errorText(data,200)}`);
+    }
+    urls.push(url);
+  }
+  return urls;
+}
 
 async function uploadReference(settings, ref) {
   const sign = await requestJson(settings, '/api/upload/presign', {
@@ -73,9 +100,21 @@ async function generateImage(settings, input, model, sizing, references) {
     return {kind:'complete',items};
   }
   if (model.adapter === 'midjourney') {
+    const imageUrls = await uploadMidjourneyReferences(settings, references);
     const text = /--ar\s+\d+:\d+/.test(prompt) ? prompt : `${prompt} --ar ${sizing.ratio}`;
-    const data = await requestJson(settings, '/mj/submit/imagine', {method:'POST',body:JSON.stringify({mode:'FAST',prompt:text,base64Array:references.map(dataUri)})});
-    if (![1,21,22].includes(Number(data.code)) || !data.result) throw new Error(errorText(data,200));
+    const submittedPrompt = [...imageUrls,text].join(' ');
+    let data;
+    try {
+      data = await requestJson(settings, '/mj/submit/imagine', {method:'POST',body:JSON.stringify({mode:'FAST',prompt:submittedPrompt,base64Array:[]})});
+    } catch (error) {
+      if (/do_request_failed/i.test(error.message)) throw new Error(MIDJOURNEY_REQUEST_FAILED, {cause:error});
+      throw error;
+    }
+    if (![1,21,22].includes(Number(data.code)) || !data.result) {
+      const detail = errorText(data,200);
+      if (/do_request_failed/i.test(detail)) throw new Error(MIDJOURNEY_REQUEST_FAILED);
+      throw new Error(`Midjourney 提交失败（code ${data.code ?? '未知'}）：${detail}`);
+    }
     return {kind:'task',taskId:String(data.result),taskAdapter:'midjourney'};
   }
   if (model.adapter === 'task-image') {

@@ -41,6 +41,51 @@ test('Midjourney 的纯文本 JSON 提交成功响应会保留任务 ID',async()
     assert.deepEqual(result,{kind:'task',taskId:'1792115316238633',taskAdapter:'midjourney'});
   } finally {await new Promise(resolve=>server.close(resolve));}
 });
+test('Midjourney 多张参考图先逐张上传，再用 URL 提交单次 Imagine',async()=>{
+  const uploads=[];let imagineCount=0;
+  const server=http.createServer(async(req,res)=>{
+    const chunks=[];for await(const chunk of req)chunks.push(chunk);
+    const body=JSON.parse(Buffer.concat(chunks).toString());
+    res.setHeader('Content-Type','application/json');
+    if(req.url==='/mj/submit/upload-discord-images'){
+      assert.equal(body.base64Array.length,1);
+      assert.match(body.base64Array[0],/^data:image\/png;base64,/);
+      uploads.push(body.base64Array[0]);
+      res.end(JSON.stringify({code:1,result:[`https://cdn.example.com/ref-${uploads.length}.png`]}));
+    }else if(req.url==='/mj/submit/imagine'){
+      imagineCount++;
+      assert.deepEqual(body.base64Array,[]);
+      assert.equal(body.prompt,'https://cdn.example.com/ref-1.png https://cdn.example.com/ref-2.png 描述 --ar 3:4');
+      res.end(JSON.stringify({code:1,result:'task-123'}));
+    }else{res.statusCode=404;res.end('{}');}
+  });
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+  try{
+    const refs=[1,2].map(n=>({mime:'image/png',buffer:Buffer.from(`image-${n}`)}));
+    const result=await generateImage({baseUrl:`http://127.0.0.1:${server.address().port}`,apiKey:'test'},{prompt:'描述'},{adapter:'midjourney'},{ratio:'3:4'},refs);
+    assert.equal(result.taskId,'task-123');assert.equal(uploads.length,2);assert.equal(imagineCount,1);
+  }finally{await new Promise(resolve=>server.close(resolve));}
+});
+test('Midjourney 参考图上传失败时不提交 Imagine，也不自动重试',async()=>{
+  let imagineCount=0;
+  const server=http.createServer((req,res)=>{
+    res.setHeader('Content-Type','application/json');
+    if(req.url==='/mj/submit/imagine')imagineCount++;
+    res.end(JSON.stringify({code:4,description:'upload_failed'}));
+  });
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+  try{
+    await assert.rejects(generateImage({baseUrl:`http://127.0.0.1:${server.address().port}`,apiKey:'test'},{prompt:'描述'},{adapter:'midjourney'},{ratio:'1:1'},[{mime:'image/png',buffer:Buffer.from('image')}]),/第 1 张参考图上传失败/);
+    assert.equal(imagineCount,0);
+  }finally{await new Promise(resolve=>server.close(resolve));}
+});
+test('上游安全拒绝保留请求 ID，并提供可操作提示',async()=>{
+  const id='b42bb6e-3d87-4906-a3c3-4cc5757184ab';
+  const server=http.createServer((req,res)=>{res.statusCode=400;res.setHeader('Content-Type','application/json');res.end(JSON.stringify({error:{message:`Your request was rejected by the safety system. If you believe this is an error, contact us at Azure support ticket and include the request ID ${id}.`}}));});
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+  try{await assert.rejects(requestJson({baseUrl:`http://127.0.0.1:${server.address().port}`,apiKey:'test'},'/v1/images/generations'),error=>/上游安全系统拒绝/.test(error.message)&&error.message.includes(id));}
+  finally{await new Promise(resolve=>server.close(resolve));}
+});
 test('Midjourney 任务查询可解析纯文本 JSON',async()=>{
   const server=http.createServer((req,res)=>{res.setHeader('Content-Type','text/plain');res.end(JSON.stringify({status:'SUCCESS',imageUrl:'https://example.com/result.png'}));});
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));

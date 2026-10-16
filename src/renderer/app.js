@@ -115,7 +115,7 @@ async function saveMedia(record,index){try{const done=await window.workbench.sav
 async function doGenerate(){if(state.busy)return;if(!state.settings.hasKey){$('settingsDialog').showModal();toast('请先设置 API Key');return;}const model=currentModel();const prompt=$('promptInput').value.trim();if(!prompt){toast('请先填写提示词');$('promptInput').focus();return;}if(model.requiredRefs&&!state.references.length){toast('该模型需要参考图');return;}if(state.references.length&&!model.refs){toast('该模型不支持参考图');return;}
   state.busy=true;$('generateButton').disabled=true;$('generateButton').textContent='正在提交…';
   try{const result=await window.workbench.generate({type:state.view,modelId:model.id,prompt,presetId:state.presetId,referenceIds:state.references.map(r=>r.id),referenceDimensions:referenceDimensions(),seconds:Number($('secondsSelect').value)});toast(result.status==='cleared'?'任务已从历史中清除':result.status==='complete'?'生成完成，请及时保存作品':'任务已提交，生成进度会显示在历史区');state.history=await window.workbench.history();renderHistory();}
-  catch(e){toast(e.message||'生成失败');state.history=await window.workbench.history();renderHistory();}
+  catch(e){toast((e.message||'生成失败').replace(/^Error invoking remote method '[^']+': Error: /,''));state.history=await window.workbench.history();renderHistory();}
   finally{state.busy=false;$('generateButton').disabled=false;$('generateButton').innerHTML='<span>✦</span> 立即生成 <span class="button-arrow">↗</span>';}
 }
 function bindEvents(){document.querySelectorAll('.nav-item').forEach(b=>b.addEventListener('click',()=>setView(b.dataset.view)));$('allHistoryButton').addEventListener('click',()=>setView('history'));
