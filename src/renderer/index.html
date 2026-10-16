@@ -42,7 +42,10 @@
             <div class="model-info"><span class="model-spark">✦</span><div><strong id="modelName"></strong><p id="modelDesc"></p></div><span id="modelFamily" class="model-tag"></span></div>
           </section>
           <section class="field-section"><div class="field-heading"><div><h3>画幅比例</h3><span class="hint">auto 自动识别画幅</span></div></div>
-            <div class="ratio-select-wrap"><select id="ratioGrid" aria-label="选择画幅比例"></select><span class="select-caret">⌄</span></div><p class="field-note" id="resolvedSize">实际提交尺寸：—</p>
+            <div class="ratio-select-wrap"><select id="ratioGrid" aria-label="选择画幅比例"></select><span class="select-caret">⌄</span></div><p class="field-note" id="videoResolvedSize" hidden>实际提交尺寸：—</p>
+          </section>
+          <section class="field-section" id="resolutionSection"><div class="field-heading"><div><h3>分辨率</h3><span class="hint">高分辨率可能增加扣费</span></div></div>
+            <div class="ratio-select-wrap"><select id="resolutionSelect" aria-label="选择分辨率"></select><span class="select-caret">⌄</span></div><p class="field-note" id="resolvedSize">实际提交尺寸：—</p>
           </section>
           <section class="field-section prompt-section"><div class="field-heading"><div><h3>提示词</h3><span class="hint">描述内容、风格与细节</span></div><span id="promptCount">0 / 8000</span></div>
             <div class="prompt-input-wrap"><textarea id="promptInput" maxlength="8000" placeholder="描述你想创作的画面……"></textarea><button id="expandPromptButton" class="prompt-expand-button" type="button" title="展开提示词输入框" aria-label="展开提示词输入框" aria-expanded="false">⤢</button></div>

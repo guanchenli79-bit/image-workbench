@@ -1,6 +1,7 @@
 const $ = id => document.getElementById(id);
-const state = {view:'image',presetId:'auto',modelId:'gpt-image-2-vip',references:[],imageModels:[],videoModels:[],presets:[],history:[],settings:null,activeSubmissions:0,lastSubmitAt:0,update:{state:'idle',version:null,percent:0},dismissedUpdateVersion:null,dismissedReadyVersion:null};
+const state = {view:'image',presetId:'auto',modelId:'gpt-image-2-vip',resolutionId:null,resolutionsByModel:{},references:[],imageModels:[],videoModels:[],presets:[],history:[],settings:null,activeSubmissions:0,lastSubmitAt:0,update:{state:'idle',version:null,percent:0},dismissedUpdateVersion:null,dismissedReadyVersion:null};
 let toastTimer;
+let sizeNoteRequest=0;
 
 function setTheme(theme){
   const chosen=theme==='dark'?'dark':'light';
@@ -75,13 +76,26 @@ function renderModels() {
   const seconds=$('secondsSelect');seconds.replaceChildren();
   if(state.view==='video')for(const n of model.seconds){const o=document.createElement('option');o.value=n;o.textContent=n;seconds.append(o);}
   $('secondsLabel').hidden=state.view!=='video';
+  renderResolutions();
   updateSizeNote();
+}
+function renderResolutions(){
+  const section=$('resolutionSection');section.hidden=state.view!=='image';
+  $('videoResolvedSize').hidden=state.view!=='video';
+  if(state.view!=='image')return;
+  const model=currentModel();const options=model.resolutions||['default'];
+  const saved=state.resolutionsByModel[model.id];
+  state.resolutionId=options.includes(saved)?saved:(model.defaultResolution||options[0]);
+  state.resolutionsByModel[model.id]=state.resolutionId;
+  const select=$('resolutionSelect');select.replaceChildren();
+  for(const resolution of options){const option=document.createElement('option');option.value=resolution;option.textContent=resolution==='default'?'模型默认':resolution;select.append(option);}
+  select.value=state.resolutionId;
 }
 function renderRatios() {
   const grid=$('ratioGrid');grid.replaceChildren();
   for(const preset of state.presets){
     const option=document.createElement('option');option.value=preset.id;
-    option.textContent=preset.id==='auto'?'auto · 自动识别':`${preset.label} · ${preset.dimensions}`;
+    option.textContent=preset.id==='auto'?'auto · 自动识别':preset.label;
     grid.append(option);
   }
   grid.value=state.presetId;
@@ -89,10 +103,11 @@ function renderRatios() {
 function referenceDimensions(){return state.references[0]?{width:state.references[0].width,height:state.references[0].height}:null;}
 async function updateSizeNote() {
   const model=currentModel();if(!model)return;
-  try{const result=await window.workbench.resolveSize({modelId:model.id,presetId:state.presetId,prompt:$('promptInput').value,referenceDimensions:referenceDimensions()});
-    if(!result)return;
+  const request=++sizeNoteRequest;const view=state.view;
+  try{const result=await window.workbench.resolveSize({modelId:model.id,presetId:state.presetId,resolutionId:state.view==='image'?state.resolutionId:undefined,prompt:$('promptInput').value,referenceDimensions:referenceDimensions()});
+    if(!result||request!==sizeNoteRequest)return;
     const label=result.size?`实际提交尺寸：${result.size} · 比例 ${result.ratio}`:`实际提交比例：${result.ratio}`;
-    $('resolvedSize').textContent=label+(result.adjusted?'（已按模型能力适配）':'');
+    (view==='video'?$('videoResolvedSize'):$('resolvedSize')).textContent=label+(result.adjusted?'（已按模型能力适配）':'');
   }catch{}
 }
 function renderReferences(){const host=$('referenceList');host.replaceChildren();for(const r of state.references){const card=document.createElement('div');card.className='reference-card';const img=document.createElement('img');img.src=r.preview;img.alt=r.name;img.title='双击查看参考图';img.tabIndex=0;img.setAttribute('role','button');img.setAttribute('aria-label',`查看参考图：${r.name}`);img.addEventListener('dblclick',()=>showImagePreview(r.preview,r.name,'参考图'));img.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();showImagePreview(r.preview,r.name,'参考图');}});const remove=document.createElement('button');remove.type='button';remove.textContent='×';remove.title='移除参考图';remove.setAttribute('aria-label',`移除参考图：${r.name}`);remove.addEventListener('click',()=>{window.workbench.clearReferences([r.id]);state.references=state.references.filter(x=>x.id!==r.id);renderReferences();updateSizeNote();});card.append(img,remove);host.append(card);}}
@@ -123,7 +138,7 @@ async function saveMedia(record,index){try{const done=await window.workbench.sav
 async function doGenerate(){if(!state.settings.hasKey){$('settingsDialog').showModal();toast('请先设置 API Key');return;}const model=currentModel();const prompt=$('promptInput').value.trim();if(!prompt){toast('请先填写提示词');$('promptInput').focus();return;}if(model.requiredRefs&&!state.references.length){toast('该模型需要参考图');return;}if(state.references.length&&!model.refs){toast('该模型不支持参考图');return;}
   if(Date.now()-state.lastSubmitAt<600)return;
   state.lastSubmitAt=Date.now();
-  const input={type:state.view,modelId:model.id,prompt,presetId:state.presetId,referenceIds:state.references.map(r=>r.id),referenceDimensions:referenceDimensions(),seconds:Number($('secondsSelect').value)};
+  const input={type:state.view,modelId:model.id,prompt,presetId:state.presetId,resolutionId:state.view==='image'?state.resolutionId:undefined,referenceIds:state.references.map(r=>r.id),referenceDimensions:referenceDimensions(),seconds:Number($('secondsSelect').value)};
   state.activeSubmissions++;$('generateButton').innerHTML=`<span>✦</span> 继续生成 · ${state.activeSubmissions} 个提交中 <span class="button-arrow">↗</span>`;
   try{const result=await window.workbench.generate(input);toast(result.status==='cleared'?'任务已从历史中清除':result.status==='complete'?'生成完成，请及时保存作品':'任务已提交，可继续创建其他任务');state.history=await window.workbench.history();renderHistory();}
   catch(e){toast((e.message||'生成失败').replace(/^Error invoking remote method '[^']+': Error: /,''));state.history=await window.workbench.history();renderHistory();}
@@ -144,6 +159,7 @@ function bindEvents(){document.querySelectorAll('.nav-item').forEach(b=>b.addEve
   window.workbench.onNotice(toast);
   $('promptInput').addEventListener('input',()=>{$('promptCount').textContent=`${$('promptInput').value.length} / 8000`;updateSizeNote();});$('modelSelect').addEventListener('change',e=>{state.modelId=e.target.value;renderModels();});
   $('ratioGrid').addEventListener('change',e=>{state.presetId=e.target.value;updateSizeNote();});
+  $('resolutionSelect').addEventListener('change',e=>{state.resolutionId=e.target.value;state.resolutionsByModel[currentModel().id]=e.target.value;updateSizeNote();});
   $('addReference').addEventListener('click',async()=>{try{await appendReferences(await window.workbench.chooseReferences());}catch(e){toast(e.message);}});
   const dropzone=$('addReference');
   const hasDraggedFiles=event=>Array.from(event.dataTransfer?.types||[]).includes('Files');

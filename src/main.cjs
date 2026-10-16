@@ -214,7 +214,7 @@ function registerIpc() {
     const data=await requestJson(candidate,'/v1/models',{method:'GET',signal:AbortSignal.timeout(25000)});
     return {ok:true,modelCount:Array.isArray(data?.data)?data.data.length:null};
   });
-  ipcMain.handle('size:resolve',async(_,input)=>{const model=[...imageModels,...videoModels].find(x=>x.id===input.modelId);return model?resolveSize(model,input.presetId,input.prompt,input.referenceDimensions):null;});
+  ipcMain.handle('size:resolve',async(_,input)=>{const model=[...imageModels,...videoModels].find(x=>x.id===input.modelId);return model?resolveSize(model,input.presetId,input.prompt,input.referenceDimensions,input.resolutionId):null;});
   ipcMain.handle('reference:choose',async()=>{
     const picked=await dialog.showOpenDialog(mainWindow,{title:'选择参考图',properties:['openFile','multiSelections'],filters:[{name:'图片',extensions:['png','jpg','jpeg','webp']}]});
     if(picked.canceled)return [];
@@ -235,9 +235,9 @@ function registerIpc() {
     if(references.length>10)throw new Error('参考图最多支持 10 张');
     if(references.length && !model.refs)throw new Error('该模型不支持参考图');
     if(model.requiredRefs && !references.length)throw new Error('该模型需要至少一张参考图');
-    const sizing=resolveSize(model,input.presetId,prompt,input.referenceDimensions);
+    const sizing=resolveSize(model,input.presetId,prompt,input.referenceDimensions,type==='image'?input.resolutionId:undefined);
     const snapshot={...settings};
-    const record={id:crypto.randomUUID(),type,modelId:model.id,modelName:model.label,prompt,presetId:input.presetId,actualRatio:sizing.ratio,actualSize:sizing.size,status:'submitting',progress:0,createdAt:Date.now(),files:[]};
+    const record={id:crypto.randomUUID(),type,modelId:model.id,modelName:model.label,prompt,presetId:input.presetId,resolution:sizing.resolution,actualRatio:sizing.ratio,actualSize:sizing.size,status:'submitting',progress:0,createdAt:Date.now(),files:[]};
     records.unshift(record);await persistRecords();
     try {
       const result=type==='image'?await generateImage(snapshot,{prompt},model,sizing,references):await generateVideo(snapshot,{prompt,seconds:input.seconds},model,sizing,references);

@@ -105,7 +105,7 @@ async function generateImage(settings, input, model, sizing, references) {
   if (model.adapter === 'gemini') {
     const parts = [{text:prompt}, ...references.map(ref => ({inlineData:{mimeType:ref.mime,data:ref.buffer.toString('base64')}}))];
     const data = await requestJson(settings, `/v1beta/models/${encodeURIComponent(model.id)}:generateContent`, {
-      method:'POST', body:JSON.stringify({contents:[{role:'user',parts}],generationConfig:{responseModalities:['TEXT','IMAGE'],imageConfig:{aspectRatio:sizing.ratio,imageSize:model.id==='gemini-3-pro-image-preview'?'2K':'1K'}}})
+      method:'POST', body:JSON.stringify({contents:[{role:'user',parts}],generationConfig:{responseModalities:['TEXT','IMAGE'],imageConfig:{aspectRatio:sizing.ratio,imageSize:sizing.resolution}}})
     });
     const items = imageItems(data);
     if (!items.length) throw new Error('接口没有返回图片，请检查模型输出或通道状态');

@@ -1,3 +1,23 @@
+const imageResolutionSettings = {
+  'gpt-image-2-vip': { resolutions: ['1K','2K','4K'] },
+  'gpt-image-2': { resolutions: ['1K'] },
+  'gpt-image-2-pro': { resolutions: ['2K','4K'] },
+  'gpt-image-2.5-flare': { resolutions: ['1K','2K','4K'] },
+  'gpt-image-2.5-sunburst': { resolutions: ['1K','2K','4K'] },
+  'gemini-3-pro-image-preview': { resolutions: ['1K','2K'], defaultResolution: '2K' },
+  'gemini-2.5-flash-image-preview': { resolutions: ['1K'] },
+  'gemini-3.1-flash-image-preview': { resolutions: ['1K'] },
+  'gemini-3.1-flash-lite-image': { resolutions: ['1K'] },
+  'doubao-seedream-4-0-250828': { resolutions: ['2K'] },
+  'seedream-4-0-250828': { resolutions: ['2K'] },
+  'doubao-seedream-4-5-251128': { resolutions: ['2K'] },
+  'doubao-seedream-5-0-260128': { resolutions: ['2K'] },
+  'grok-4-2-image': { resolutions: ['2K'] },
+  'image2-high-2k': { resolutions: ['2K'] },
+  'gg-3.1-4k': { resolutions: ['4K'] },
+  'dall-e-2': { resolutions: ['1K'] }
+};
+
 const imageModels = [
   { id: 'gpt-image-2-vip', label: 'GPT Image 2 VIP', family: 'GPT Image', adapter: 'images', refs: true, ratios: ['1:1','4:3','3:4','3:2','2:3','16:9','9:16','21:9'] },
   { id: 'gpt-image-2', label: 'GPT Image 2', family: 'GPT Image', adapter: 'images', refs: true, ratios: ['1:1','4:3','3:2','2:3','16:9','9:16'] },
@@ -26,7 +46,7 @@ const imageModels = [
   { id: 'dall-e-3', label: 'DALL·E 3', family: 'OpenAI Images', adapter: 'legacy-images', refs: false, ratios: ['1:1','3:2','2:3'] },
   { id: 'dall-e-2', label: 'DALL·E 2', family: 'OpenAI Images', adapter: 'legacy-images', refs: true, ratios: ['1:1'] },
   { id: 'midjourney', label: 'Midjourney Imagine', family: 'Midjourney', adapter: 'midjourney', refs: true, ratios: ['1:1','16:9','9:16','4:3','3:4','3:2','2:3','21:9'] }
-];
+].map(model => ({ resolutions: ['default'], ...model, ...imageResolutionSettings[model.id] }));
 
 const videoModels = [
   { id:'sora-2', label:'Sora 2', family:'Sora', adapter:'video', refs:true, ratios:['16:9','9:16'], seconds:[4,8,12] },

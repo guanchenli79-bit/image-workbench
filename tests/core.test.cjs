@@ -35,6 +35,49 @@ test('模型尺寸适配不提交其不支持的画幅',()=>{
   const pro=imageModels.find(x=>x.id==='gpt-image-2-pro');
   assert.equal(resolveSize(pro,'3:4','',null).size,'1536x2048');
 });
+test('分辨率只提供模型支持的档位，并真正改变提交尺寸',()=>{
+  const vip=imageModels.find(x=>x.id==='gpt-image-2-vip');
+  assert.deepEqual(vip.resolutions,['1K','2K','4K']);
+  assert.equal(resolveSize(vip,'16:9','',null,'1K').size,'1280x720');
+  assert.equal(resolveSize(vip,'16:9','',null,'2K').size,'2560x1440');
+  assert.equal(resolveSize(vip,'16:9','',null,'4K').size,'3840x2160');
+  assert.throws(()=>resolveSize(vip,'16:9','',null,'8K'),/不支持/);
+  const pro=imageModels.find(x=>x.id==='gpt-image-2-pro');
+  assert.deepEqual(pro.resolutions,['2K','4K']);
+  assert.equal(resolveSize(pro,'1:1','',null,'4K').size,'2880x2880');
+  const gemini=imageModels.find(x=>x.id==='gemini-3-pro-image-preview');
+  assert.equal(resolveSize(gemini,'1:1','',null).resolution,'2K');
+  assert.equal(resolveSize(gemini,'1:1','',null,'1K').resolution,'1K');
+  assert.deepEqual(imageModels.find(x=>x.id==='midjourney').resolutions,['default']);
+});
+test('每个图像模型的可选分辨率与画幅都能解析为提交参数',()=>{
+  for (const model of imageModels) {
+    for (const resolution of model.resolutions) {
+      for (const ratio of model.ratios) {
+        const result=resolveSize(model,ratio,'',null,resolution);
+        assert.equal(result.resolution,resolution,`${model.id} ${resolution}`);
+        if (model.adapter !== 'gemini' && model.adapter !== 'midjourney') {
+          assert.match(result.size,/^\d+x\d+$/,`${model.id} ${resolution} ${ratio}`);
+        }
+      }
+    }
+  }
+});
+test('Gemini 图像请求使用用户选中的分辨率',async()=>{
+  let submitted;
+  const server=http.createServer(async(req,res)=>{
+    submitted=JSON.parse(await new Promise(resolve=>{let body='';req.on('data',chunk=>body+=chunk);req.on('end',()=>resolve(body));}));
+    res.setHeader('Content-Type','application/json');
+    res.end(JSON.stringify({candidates:[{content:{parts:[{inlineData:{mimeType:'image/png',data:Buffer.from('png').toString('base64')}}]}}]}));
+  });
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+  try{
+    const model=imageModels.find(x=>x.id==='gemini-3-pro-image-preview');
+    await generateImage({baseUrl:`http://127.0.0.1:${server.address().port}`,apiKey:'test'},{prompt:'山水'},model,resolveSize(model,'16:9','',null,'1K'),[]);
+    assert.equal(submitted.generationConfig.imageConfig.imageSize,'1K');
+    assert.equal(submitted.generationConfig.imageConfig.aspectRatio,'16:9');
+  }finally{await new Promise(resolve=>server.close(resolve));}
+});
 test('API Key 用 Bearer 头发送到指定基础地址',async()=>{
   const server=http.createServer((req,res)=>{assert.equal(req.url,'/v1/models');assert.equal(req.headers.authorization,'Bearer test-key');res.setHeader('Content-Type','application/json');res.end(JSON.stringify({object:'list',data:[]}));});
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
