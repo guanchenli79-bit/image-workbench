@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('workbench',{
   verifySettings:data=>ipcRenderer.invoke('settings:verify',data),
   resolveSize:data=>ipcRenderer.invoke('size:resolve',data),
   chooseReferences:()=>ipcRenderer.invoke('reference:choose'),
+  addReferences:files=>ipcRenderer.invoke('reference:add',files),
   clearReferences:ids=>ipcRenderer.invoke('reference:clear',ids),
   generate:data=>ipcRenderer.invoke('generate',data),
   history:()=>ipcRenderer.invoke('history:list'),

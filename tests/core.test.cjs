@@ -7,6 +7,7 @@ const {autoRatio,resolveSize}=require('../src/sizing.cjs');
 const {normalizeBase,requestJson,generateImage,queryTask}=require('../src/api.cjs');
 const {recoverSubmittedMidjourney}=require('../src/recovery.cjs');
 const {releaseNotesText}=require('../src/update-notes.cjs');
+const {prepareReference}=require('../src/references.cjs');
 
 test('更新弹窗能展示多个版本的说明并清理 HTML 标记',()=>{
   const notes=releaseNotesText([{version:'0.1.6',note:'<h2>新增</h2><ul><li>并行任务</li><li>图片放大</li></ul>'},{version:'0.1.5',note:'## 修复\n- Midjourney 参考图'}]);
@@ -41,6 +42,59 @@ test('API Key 用 Bearer 头发送到指定基础地址',async()=>{
   finally{await new Promise(resolve=>server.close(resolve));}
 });
 test('远程 HTTP 接口不可接收 API Key',()=>assert.throws(()=>normalizeBase('http://example.com'),/HTTPS/));
+test('参考图检查实际文件格式，避免把错误数据交给图像接口',()=>{
+  const png=Buffer.from([137,80,78,71,13,10,26,10,0]);
+  assert.equal(prepareReference('sample.PNG',png).mime,'image/png');
+  assert.throws(()=>prepareReference('sample.png',Buffer.from('not an image')),/不是有效/);
+  assert.throws(()=>prepareReference('sample.gif',png),/仅支持/);
+});
+test('GPT Image 2 VIP 三张参考图先上传，再以原顺序的 URL 提交异步任务',async()=>{
+  const uploads=[];let submitted;
+  const server=http.createServer(async(req,res)=>{
+    const chunks=[];for await(const chunk of req)chunks.push(chunk);
+    const raw=Buffer.concat(chunks);
+    res.setHeader('Content-Type','application/json');
+    const base=`http://127.0.0.1:${server.address().port}`;
+    if(req.url==='/api/upload/presign'){
+      const body=JSON.parse(raw.toString());
+      const index=Number(body.file_name.match(/\d+/)[0]);
+      res.end(JSON.stringify({success:true,data:{upload_url:`${base}/upload/${index}`,public_url:`${base}/public/${index}`}}));
+    }else if(req.url.startsWith('/upload/')){
+      uploads.push({index:Number(req.url.split('/').pop()),mime:req.headers['content-type'],body:raw.toString()});res.end('{}');
+    }else if(req.url==='/v1/images/generations/async'){
+      submitted=JSON.parse(raw.toString());res.end(JSON.stringify({id:'vip-task-123',status:'queued'}));
+    }else{res.statusCode=404;res.end('{}');}
+  });
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+  try{
+    const refs=[1,2,3].map(index=>({name:`ref-${index}.png`,mime:'image/png',buffer:Buffer.from(`image-${index}`)}));
+    const result=await generateImage({baseUrl:`http://127.0.0.1:${server.address().port}`,apiKey:'test'},
+      {prompt:'参考这三张图'}, {id:'gpt-image-2-vip',adapter:'images'}, {size:'1024x1024'},refs);
+    assert.deepEqual(result,{kind:'task',taskId:'vip-task-123',taskAdapter:'image-async'});
+    assert.deepEqual(uploads.sort((a,b)=>a.index-b.index).map(item=>item.body),['image-1','image-2','image-3']);
+    assert.deepEqual(submitted.image,[1,2,3].map(index=>`http://127.0.0.1:${server.address().port}/public/${index}`));
+    assert.equal(submitted.model,'gpt-image-2-vip');
+    assert.equal(submitted.size,'1024x1024');
+    const other=await generateImage({baseUrl:`http://127.0.0.1:${server.address().port}`,apiKey:'test'},
+      {prompt:'参考图片'}, {id:'gpt-image-2',adapter:'images'}, {size:'1024x1024'},refs.slice(0,1));
+    assert.equal(other.taskAdapter,'image-async');
+    assert.equal(submitted.model,'gpt-image-2');
+    assert.equal(submitted.image.length,1);
+  }finally{await new Promise(resolve=>server.close(resolve));}
+});
+test('异步生图查询识别百分比、无 status 的成品和失败原因',async()=>{
+  let response={status:'in_progress',progress:'38%'};
+  const server=http.createServer((req,res)=>{assert.equal(req.url,'/v1/images/generations/async/vip-task-123');res.setHeader('Content-Type','application/json');res.end(JSON.stringify(response));});
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+  const settings={baseUrl:`http://127.0.0.1:${server.address().port}`,apiKey:'test'};
+  try{
+    assert.deepEqual(await queryTask(settings,'image-async','vip-task-123','image'),{status:'pending',progress:38});
+    response={data:[{url:'https://example.com/generated.png'}]};
+    assert.deepEqual(await queryTask(settings,'image-async','vip-task-123','image'),{status:'complete',items:[{url:'https://example.com/generated.png',b64:undefined,mime:'image/png'}]});
+    response={status:'failed',error:{message:'上游生成失败'}};
+    assert.deepEqual(await queryTask(settings,'image-async','vip-task-123','image'),{status:'failed',error:'上游生成失败'});
+  }finally{await new Promise(resolve=>server.close(resolve));}
+});
 test('Midjourney 的纯文本 JSON 提交成功响应会保留任务 ID',async()=>{
   const server=http.createServer((req,res)=>{res.setHeader('Content-Type','text/plain');res.end(JSON.stringify({code:1,description:'Submit success',result:'1792115316238633'}));});
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));

@@ -34,7 +34,7 @@
         <section class="workspace-view" id="creationView">
           <div class="panel-heading-main"><div><span class="eyebrow" id="breadcrumbCurrent">CREATE SOMETHING NEW</span><h1 id="formTitle">图像创作</h1></div><span class="panel-counter">01 / CREATE</span></div>
           <section class="field-section reference-section"><div class="field-heading"><div><h3>参考图</h3><span class="hint" id="referenceHint">可选 · 支持多图</span></div><span class="optional-label">IMAGE INPUT</span></div>
-            <button class="dropzone" id="addReference" type="button"><span class="upload-mark">↑</span><strong>点击添加参考图片</strong><small>PNG、JPG、WEBP · 单张不超过 10 MB</small></button>
+            <button class="dropzone" id="addReference" type="button"><span class="upload-mark">↑</span><strong>点击选择或拖入参考图片</strong><small>PNG、JPG、WEBP · 单张不超过 10 MB · 最多 10 张</small></button>
             <div class="reference-list" id="referenceList"></div>
           </section>
           <section class="field-section"><div class="field-heading"><div><h3>选择模型</h3><span class="hint" id="modelCount"></span></div></div>
@@ -59,7 +59,7 @@
     <div class="modal-actions"><button type="button" class="ghost-button" id="clearKeyButton">清除 Key</button><div class="settings-actions"><button type="button" class="ghost-button" id="verifyKeyButton">测试连接</button><button type="submit" class="primary-button">保存设置</button></div></div>
   </form></dialog>
   <dialog id="updateDialog" class="modal update-modal" aria-labelledby="updateTitle"><div class="modal-head"><div><span class="eyebrow">APP UPDATE</span><h2 id="updateTitle">发现新版本</h2></div><button class="modal-close" id="closeUpdateDialog" type="button" aria-label="关闭">×</button></div><p class="modal-intro" id="updateDescription">新版本已经发布，你可以选择何时更新。</p><div class="update-notes"><strong>本次更新内容</strong><div id="updateNotesText">正在读取更新说明…</div></div><div class="modal-actions"><button type="button" class="ghost-button" id="updateLaterButton">稍后再说</button><button type="button" class="primary-button" id="updateActionButton">下载更新</button></div></dialog>
-  <dialog id="imagePreviewDialog" class="image-preview-dialog" aria-label="图片预览"><div class="image-preview-toolbar"><span>图片预览 · 双击图片可打开</span><button id="closeImagePreview" type="button" aria-label="关闭图片预览">×</button></div><div class="image-preview-stage"><img id="imagePreview" alt="放大的生成图片"></div></dialog>
+  <dialog id="imagePreviewDialog" class="image-preview-dialog" aria-label="图片预览"><div class="image-preview-toolbar"><span id="imagePreviewTitle">图片预览</span><button id="closeImagePreview" type="button" aria-label="关闭图片预览">×</button></div><div class="image-preview-stage"><img id="imagePreview" alt="放大的图片"></div></dialog>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <script src="app.js"></script>
 </body>

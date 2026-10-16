@@ -10,6 +10,7 @@ const { normalizeBase, requestJson, generateImage, generateVideo, queryTask } = 
 const { networkFetch } = require('./network.cjs');
 const { recoverSubmittedMidjourney } = require('./recovery.cjs');
 const { releaseNotesText } = require('./update-notes.cjs');
+const { prepareReference, MAX_REFERENCES } = require('./references.cjs');
 
 protocol.registerSchemesAsPrivileged([{scheme:'workbench-media',privileges:{secure:true,standard:true,supportFetchAPI:true,stream:true}}]);
 
@@ -58,6 +59,16 @@ async function persistSettings() {
   await writeJson(files().settings,{baseUrl:settings.baseUrl,apiKey:encrypted(settings.apiKey)});
 }
 function publicSettings() { return {baseUrl:settings.baseUrl,hasKey:!!settings.apiKey,keyTail:settings.apiKey?settings.apiKey.slice(-4):''}; }
+function storeReferences(inputs) {
+  if (!Array.isArray(inputs) || !inputs.length) return [];
+  if (inputs.length + refs.size > MAX_REFERENCES) throw new Error(`参考图最多支持 ${MAX_REFERENCES} 张，请先移除多余图片`);
+  const prepared = inputs.map(input=>prepareReference(input.name,input.bytes));
+  return prepared.map(({buffer,mime,name})=>{
+    const id=crypto.randomUUID();
+    refs.set(id,{buffer,mime,name,addedAt:Date.now()});
+    return {id,name,preview:`data:${mime};base64,${buffer.toString('base64')}`};
+  });
+}
 function emit(channel,value) { if(mainWindow && !mainWindow.isDestroyed())mainWindow.webContents.send(channel,value); }
 async function persistRecords() {
   const snapshot=JSON.parse(JSON.stringify(records));
@@ -207,16 +218,11 @@ function registerIpc() {
   ipcMain.handle('reference:choose',async()=>{
     const picked=await dialog.showOpenDialog(mainWindow,{title:'选择参考图',properties:['openFile','multiSelections'],filters:[{name:'图片',extensions:['png','jpg','jpeg','webp']}]});
     if(picked.canceled)return [];
-    const result=[];
-    for(const file of picked.filePaths.slice(0,10)){
-      const buffer=await fsp.readFile(file);
-      if(buffer.length>10*1024*1024)throw new Error('单张参考图不能超过 10 MB');
-      const ext=path.extname(file).toLowerCase();const mime=ext==='.png'?'image/png':ext==='.webp'?'image/webp':'image/jpeg';
-      const id=crypto.randomUUID(); refs.set(id,{buffer,mime,name:path.basename(file),addedAt:Date.now()});
-      result.push({id,name:path.basename(file),preview:`data:${mime};base64,${buffer.toString('base64')}`});
-    }
-    return result;
+    if(picked.filePaths.length+refs.size>MAX_REFERENCES)throw new Error(`参考图最多支持 ${MAX_REFERENCES} 张，请先移除多余图片`);
+    const inputs=await Promise.all(picked.filePaths.map(async file=>({name:path.basename(file),bytes:await fsp.readFile(file)})));
+    return storeReferences(inputs);
   });
+  ipcMain.handle('reference:add',async(_,inputs)=>storeReferences(inputs));
   ipcMain.handle('reference:clear',async(_,ids)=>{for(const id of ids||[])refs.delete(id);});
   ipcMain.handle('generate',async(_,input)=>{
     await pruneExpired();

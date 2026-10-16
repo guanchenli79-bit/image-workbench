@@ -1,6 +1,7 @@
 const path = require('node:path');
 const { Blob } = require('node:buffer');
 const { networkFetch } = require('./network.cjs');
+const URL_REFERENCE_IMAGE_MODELS = new Set(['gpt-image-2','gpt-image-2-pro','gpt-image-2.5-flare','gpt-image-2.5-sunburst','gpt-image-2-vip']);
 
 function normalizeBase(value) {
   const raw = String(value || 'https://www.geeknow.top').trim().replace(/\/+$/, '');
@@ -24,14 +25,15 @@ async function requestJson(settings, route, options = {}) {
   const base = normalizeBase(settings.baseUrl);
   if (!settings.apiKey) throw new Error('请先设置 API Key');
   const url = base + route;
+  const { allowTaskError = false, ...requestOptions } = options;
   const response = await networkFetch(url, {
-    ...options,
+    ...requestOptions,
     headers: {
       Authorization: `Bearer ${settings.apiKey}`,
-      ...(!(options.body instanceof FormData) ? {'Content-Type':'application/json'} : {}),
-      ...options.headers
+      ...(!(requestOptions.body instanceof FormData) ? {'Content-Type':'application/json'} : {}),
+      ...requestOptions.headers
     },
-    signal: options.signal || AbortSignal.timeout(180000)
+    signal: requestOptions.signal || AbortSignal.timeout(180000)
   });
   const body = await response.text();
   let data;
@@ -39,7 +41,7 @@ async function requestJson(settings, route, options = {}) {
   if (typeof data === 'string') {
     try { data = JSON.parse(data); } catch { data = { message: data.slice(0,300) }; }
   }
-  if (!response.ok || data?.success === false || data?.error) throw new Error(errorText(data, response.status));
+  if (!response.ok || data?.success === false || (data?.error && !allowTaskError)) throw new Error(errorText(data, response.status));
   return data;
 }
 
@@ -82,10 +84,20 @@ async function uploadReference(settings, ref) {
   const target = sign?.data;
   if (!target?.upload_url || !target?.public_url) throw new Error('该 API 通道未返回素材上传地址，请检查上传服务是否可用');
   const uploadUrl = new URL(target.upload_url);
-  if (uploadUrl.protocol !== 'https:') throw new Error('素材上传地址未使用 HTTPS');
+  const isSecureUrl = url => url.protocol === 'https:' || url.protocol === 'http:' && ['localhost','127.0.0.1','::1'].includes(url.hostname);
+  if (!isSecureUrl(uploadUrl)) throw new Error('素材上传地址未使用 HTTPS');
   const response = await networkFetch(uploadUrl, {method:'PUT', headers:{'Content-Type':ref.mime}, body:ref.buffer, signal:AbortSignal.timeout(120000)});
   if (!response.ok) throw new Error(`参考图上传失败（HTTP ${response.status}）`);
-  return target.public_url;
+  const publicUrl = new URL(target.public_url);
+  if (!isSecureUrl(publicUrl)) throw new Error('参考图公开地址未使用 HTTPS');
+  return publicUrl.href;
+}
+
+async function uploadReferences(settings, references, modelName) {
+  return Promise.all(references.map(async(ref,index)=>{
+    try { return await uploadReference(settings,ref); }
+    catch(error) { throw new Error(`${modelName} 第 ${index+1} 张参考图上传失败：${error.message}`,{cause:error}); }
+  }));
 }
 
 async function generateImage(settings, input, model, sizing, references) {
@@ -118,7 +130,7 @@ async function generateImage(settings, input, model, sizing, references) {
     return {kind:'task',taskId:String(data.result),taskAdapter:'midjourney'};
   }
   if (model.adapter === 'task-image') {
-    const urls = await Promise.all(references.map(ref => uploadReference(settings,ref)));
+    const urls = await uploadReferences(settings,references,model.label || model.id);
     const [width,height] = sizing.size.split('x').map(Number);
     const body = {model:model.id,prompt,metadata:{output_image_count:1,output_config:{width,height,aspect_ratio:sizing.ratio}}};
     if (urls.length === 1) body.image = urls[0];
@@ -136,6 +148,17 @@ async function generateImage(settings, input, model, sizing, references) {
     const items = imageItems(data);
     if (!items.length) throw new Error('接口没有返回图片');
     return {kind:'complete',items};
+  }
+  if (URL_REFERENCE_IMAGE_MODELS.has(model.id) && references.length) {
+    const urls = await uploadReferences(settings,references,model.label || model.id);
+    const data = await requestJson(settings,'/v1/images/generations/async',{
+      method:'POST',body:JSON.stringify({model:model.id,prompt,n:1,size:sizing.size,image:urls})
+    });
+    const items = imageItems(data);
+    if (items.length) return {kind:'complete',items};
+    const taskId = data.id || data.task_id || data.taskId;
+    if (!taskId) throw new Error('图像接口未返回任务 ID 或图片');
+    return {kind:'task',taskId:String(taskId),taskAdapter:'image-async'};
   }
   const body = {model:model.id,prompt,n:1,size:sizing.size};
   if (references.length) body.image = references.map(ref=>ref.buffer.toString('base64'));
@@ -174,6 +197,16 @@ async function queryTask(settings, adapter, taskId, type) {
     const urls = [data.imageUrl,...(data.imageUrls||[]).map(x=>typeof x==='string'?x:x.url)].filter(Boolean);
     if (!urls.length) urls.push(normalizeBase(settings.baseUrl)+`/mj/image/${encodeURIComponent(taskId)}`);
     return {status:'complete',items:urls.map(url=>({url,mime:'image/png'}))};
+  }
+  if (adapter === 'image-async') {
+    const data = await requestJson(settings,`/v1/images/generations/async/${encodeURIComponent(taskId)}`,{allowTaskError:true});
+    const status = String(data.status || '').toLowerCase();
+    if (['failed','failure','cancelled','canceled'].includes(status)) return {status:'failed',error:data.error?.message || data.message || '图像生成任务失败'};
+    if (data.error) throw new Error(errorText(data,200));
+    const items = imageItems(data);
+    if (items.length) return {status:'complete',items};
+    if (['completed','succeeded','success','finish','finished'].includes(status)) throw new Error('图像任务已完成，但接口没有返回图片');
+    return {status:'pending',progress:Math.min(99,Math.max(0,parseInt(data.progress,10)||0))};
   }
   const data = await requestJson(settings,`/v1/videos/${encodeURIComponent(taskId)}`);
   const status = String(data.status || '').toLowerCase();

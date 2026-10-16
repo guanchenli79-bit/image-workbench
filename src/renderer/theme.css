@@ -144,6 +144,9 @@ textarea{min-height:112px;line-height:1.65}
 .image-preview-toolbar button:hover{background:#e4e9fa;color:#445dc8}
 .image-preview-stage{height:calc(100% - 52px);display:grid;place-items:center;padding:18px;overflow:auto}
 .image-preview-stage img{max-width:100%;max-height:100%;object-fit:contain;box-shadow:0 12px 40px #19243e1c;border-radius:6px}
+.dropzone.drag-active{border-color:#5369e7;background:#eef1ff;box-shadow:0 0 0 4px #5369e71a,0 14px 32px #5369e724;transform:translateY(-2px)}
+.reference-card img{cursor:zoom-in}.reference-card img:focus-visible{outline:3px solid #8ca1ff;outline-offset:-3px}
+.image-preview-toolbar span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:16px}
 :root[data-theme="dark"] .task-progress-label{color:#b6c2d8}
 :root[data-theme="dark"] .task-progress-track{background:#303d57}
 :root[data-theme="dark"] .prompt-expand-button{background:#293345;border-color:#40506a;color:#b6c7ea}
@@ -151,6 +154,7 @@ textarea{min-height:112px;line-height:1.65}
 :root[data-theme="dark"] .image-preview-dialog{background:#131b29;border-color:#43516a}
 :root[data-theme="dark"] .image-preview-toolbar{background:#202b3c;border-color:#3b4961;color:#d5deee}
 :root[data-theme="dark"] .image-preview-toolbar button{background:#334156;color:#d5deee}
+:root[data-theme="dark"] .dropzone.drag-active{background:#31436b;border-color:#91a8ff;box-shadow:0 0 0 4px #8199ed33,0 14px 32px #05091855}
 :root[data-theme="dark"] .update-notes{background:#202d42;border-color:#465675;color:#e0e8f8}
 :root[data-theme="dark"] .update-notes #updateNotesText{color:#c1cce0}
 @media(prefers-reduced-motion:reduce){.task-progress-indeterminate .task-progress-fill{animation:none;width:36%}.task-progress-fill{transition:none}}
