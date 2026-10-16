@@ -9,6 +9,7 @@ Windows 图像与视频生成桌面工作台。使用者填写自己的 Geeknow 
 - 生成完成两小时后清理本机临时媒体；永久保存的文件不受影响
 - Windows 安全存储加密保存 API Key
 - 通过 GitHub Releases 自动下载并在退出时安装更新
+- 网络请求支持 `HTTP_PROXY`、`HTTPS_PROXY` 和 `NO_PROXY` 环境变量，适配需要代理才能连接 API 的电脑
 
 界面只使用一套浅色设计。每位使用者在自己的电脑填写 Key。模型是否可用取决于 Geeknow 账户权限、额度和服务状态。
 

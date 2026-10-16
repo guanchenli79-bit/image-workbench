@@ -7,6 +7,7 @@ const { pathToFileURL } = require('node:url');
 const { imageModels, videoModels, presets } = require('./catalog.cjs');
 const { resolveSize } = require('./sizing.cjs');
 const { normalizeBase, requestJson, generateImage, generateVideo, queryTask } = require('./api.cjs');
+const { networkFetch } = require('./network.cjs');
 
 protocol.registerSchemesAsPrivileged([{scheme:'workbench-media',privileges:{secure:true,standard:true,supportFetchAPI:true,stream:true}}]);
 
@@ -102,7 +103,7 @@ async function resultBuffer(settingsSnapshot,item,type) {
   const url = new URL(item.url);
   if(url.protocol!=='https:' && !(url.protocol==='http:' && ['localhost','127.0.0.1'].includes(url.hostname)))throw new Error('生成文件地址不安全');
   const sameOrigin = url.origin === new URL(normalizeBase(settingsSnapshot.baseUrl)).origin;
-  const response = await fetch(url,{headers:sameOrigin?{Authorization:`Bearer ${settingsSnapshot.apiKey}`}:{},signal:AbortSignal.timeout(type==='video'?240000:90000)});
+  const response = await networkFetch(url,{headers:sameOrigin?{Authorization:`Bearer ${settingsSnapshot.apiKey}`}:{},signal:AbortSignal.timeout(type==='video'?240000:90000)});
   if(!response.ok)throw new Error(`下载生成结果失败（HTTP ${response.status}）`);
   const limit=type==='video'?MAX_VIDEO_BYTES:MAX_IMAGE_BYTES;
   const size=Number(response.headers.get('content-length')||0);

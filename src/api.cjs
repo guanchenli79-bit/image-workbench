@@ -1,5 +1,6 @@
 const path = require('node:path');
 const { Blob } = require('node:buffer');
+const { networkFetch } = require('./network.cjs');
 
 function normalizeBase(value) {
   const raw = String(value || 'https://www.geeknow.top').trim().replace(/\/+$/, '');
@@ -18,7 +19,7 @@ async function requestJson(settings, route, options = {}) {
   const base = normalizeBase(settings.baseUrl);
   if (!settings.apiKey) throw new Error('请先设置 API Key');
   const url = base + route;
-  const response = await fetch(url, {
+  const response = await networkFetch(url, {
     ...options,
     headers: {
       Authorization: `Bearer ${settings.apiKey}`,
@@ -51,7 +52,7 @@ async function uploadReference(settings, ref) {
   if (!target?.upload_url || !target?.public_url) throw new Error('该 API 通道未返回素材上传地址，请检查上传服务是否可用');
   const uploadUrl = new URL(target.upload_url);
   if (uploadUrl.protocol !== 'https:') throw new Error('素材上传地址未使用 HTTPS');
-  const response = await fetch(uploadUrl, {method:'PUT', headers:{'Content-Type':ref.mime}, body:ref.buffer, signal:AbortSignal.timeout(120000)});
+  const response = await networkFetch(uploadUrl, {method:'PUT', headers:{'Content-Type':ref.mime}, body:ref.buffer, signal:AbortSignal.timeout(120000)});
   if (!response.ok) throw new Error(`参考图上传失败（HTTP ${response.status}）`);
   return target.public_url;
 }
