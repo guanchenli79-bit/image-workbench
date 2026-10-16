@@ -19,6 +19,11 @@ const TTL = 2 * 60 * 60 * 1000;
 const MAX_IMAGE_BYTES = 32 * 1024 * 1024;
 const MAX_VIDEO_BYTES = 512 * 1024 * 1024;
 let polling = false;
+let historyEpoch = 0;
+let historyPersistQueue = Promise.resolve();
+let availableUpdate = false;
+let updateReady = false;
+let readyVersion = null;
 
 function files() {
   const dir = app.getPath('userData');
@@ -51,7 +56,12 @@ async function persistSettings() {
 }
 function publicSettings() { return {baseUrl:settings.baseUrl,hasKey:!!settings.apiKey,keyTail:settings.apiKey?settings.apiKey.slice(-4):''}; }
 function emit(channel,value) { if(mainWindow && !mainWindow.isDestroyed())mainWindow.webContents.send(channel,value); }
-async function persistRecords() { await writeJson(files().history,records); emit('history:changed',listHistory()); }
+async function persistRecords() {
+  const snapshot=JSON.parse(JSON.stringify(records));
+  historyPersistQueue=historyPersistQueue.catch(()=>{}).then(()=>writeJson(files().history,snapshot));
+  await historyPersistQueue;
+  emit('history:changed',listHistory());
+}
 function listHistory() { return records.map(({files:mediaFiles,...rest})=>({...rest,media:mediaFiles?.map((_,i)=>`workbench-media://item/${rest.id}/${i}`)||[]})); }
 
 function availableMedia(id,index) {
@@ -114,13 +124,18 @@ async function resultBuffer(settingsSnapshot,item,type) {
 }
 async function completeRecord(record,items,settingsSnapshot) {
   const names=[];
+  const epoch=historyEpoch;
+  const active=()=>epoch===historyEpoch&&records.includes(record);
   try {
     for(let i=0;i<items.length;i++) {
+      if(!active())throw new Error('任务已从历史中清除');
       const buffer=await resultBuffer(settingsSnapshot,items[i],record.type);
+      if(!active())throw new Error('任务已从历史中清除');
       const name=`${record.id}-${i}${extension(items[i].mime,record.type,buffer)}`;
       await fsp.writeFile(path.join(files().media,name),buffer);
       names.push(name);
     }
+    if(!active())throw new Error('任务已从历史中清除');
     record.files=names; record.status='complete'; record.progress=100;
     record.completedAt=Date.now(); record.expiresAt=record.completedAt+TTL;
     await persistRecords();
@@ -138,10 +153,11 @@ async function pollTasks() {
     for(const record of pending) {
       try {
         const result=await queryTask(settings,record.taskAdapter,record.taskId,record.type);
+        if(!records.includes(record))continue;
         if(result.status==='complete') await completeRecord(record,result.items,{...settings});
         else if(result.status==='failed') {record.status='failed';record.error=result.error;await persistRecords();}
         else if(record.progress!==result.progress) {record.progress=result.progress;await persistRecords();}
-      } catch(error) { record.lastPollError=error.message; await persistRecords(); }
+      } catch(error) { if(records.includes(record)){record.lastPollError=error.message;await persistRecords();} }
     }
   } finally {polling=false;}
 }
@@ -215,15 +231,32 @@ function registerIpc() {
     records.unshift(record);await persistRecords();
     try {
       const result=type==='image'?await generateImage(snapshot,{prompt},model,sizing,references):await generateVideo(snapshot,{prompt,seconds:input.seconds},model,sizing,references);
+      if(!records.includes(record))return {id:record.id,status:'cleared'};
       if(result.kind==='complete')await completeRecord(record,result.items,snapshot);
       else {record.status='pending';record.taskId=result.taskId;record.taskAdapter=result.taskAdapter;await persistRecords();setTimeout(pollTasks,1500);}
       return {id:record.id,status:record.status};
-    } catch(error) {record.status='failed';record.error=error.message;await persistRecords();throw error;}
+    } catch(error) {if(!records.includes(record))return {id:record.id,status:'cleared'};record.status='failed';record.error=error.message;await persistRecords();throw error;}
   });
   ipcMain.handle('history:list',async()=>{await pruneExpired();return listHistory();});
+  ipcMain.handle('history:clear',async()=>{
+    const count=records.length;
+    if(count){
+      const {response}=await dialog.showMessageBox(mainWindow,{type:'warning',title:'清空历史任务？',message:`确定清空全部 ${count} 条历史任务吗？`,detail:'未另存的本机临时图片和视频会一起删除，无法恢复。正在生成的服务端任务可能继续运行。',buttons:['取消','清空历史'],defaultId:0,cancelId:0,noLink:true});
+      if(response!==1)return {cleared:false,count:0};
+    }
+    historyEpoch++;
+    records=[];
+    await persistRecords();
+    const mediaDir=files().media;
+    for(const entry of await fsp.readdir(mediaDir,{withFileTypes:true})){
+      if(entry.isFile())await fsp.rm(path.join(mediaDir,entry.name),{force:true});
+    }
+    return {cleared:true,count};
+  });
   ipcMain.handle('history:save',async(_,id,index)=>saveResult(id,index));
   ipcMain.handle('updates:check',async()=>{if(!app.isPackaged)return {message:'开发模式不检查更新'};await autoUpdater.checkForUpdates();return {message:'正在检查更新'};});
-  ipcMain.handle('updates:install',()=>{if(app.isPackaged)autoUpdater.quitAndInstall();});
+  ipcMain.handle('updates:download',async()=>{if(!app.isPackaged||!availableUpdate)throw new Error('当前没有可下载的新版本');await autoUpdater.downloadUpdate();return {message:'更新已下载'};});
+  ipcMain.handle('updates:install',()=>{if(!app.isPackaged||!updateReady)throw new Error('更新尚未下载完成');autoUpdater.quitAndInstall(false,true);});
 }
 
 app.whenReady().then(async()=>{
@@ -240,15 +273,15 @@ app.whenReady().then(async()=>{
   registerIpc();createWindow();
   setInterval(pruneExpired,60*1000);setInterval(pollTasks,15*1000);setTimeout(pollTasks,2000);
   if(app.isPackaged){
-    autoUpdater.autoDownload=true;autoUpdater.autoInstallOnAppQuit=true;
+    autoUpdater.autoDownload=false;autoUpdater.autoInstallOnAppQuit=false;
     autoUpdater.on('checking-for-update',()=>emit('update:status',{state:'checking'}));
-    autoUpdater.on('update-available',info=>emit('update:status',{state:'available',version:info.version}));
-    autoUpdater.on('update-not-available',()=>emit('update:status',{state:'current'}));
+    autoUpdater.on('update-available',info=>{if(updateReady&&readyVersion===info.version)return;availableUpdate=true;updateReady=false;readyVersion=null;emit('update:status',{state:'available',version:info.version});});
+    autoUpdater.on('update-not-available',()=>{if(!updateReady){availableUpdate=false;emit('update:status',{state:'current'});}});
     autoUpdater.on('download-progress',p=>emit('update:status',{state:'downloading',percent:Math.round(p.percent)}));
-    autoUpdater.on('update-downloaded',info=>emit('update:status',{state:'ready',version:info.version}));
+    autoUpdater.on('update-downloaded',info=>{updateReady=true;readyVersion=info.version;emit('update:status',{state:'ready',version:info.version});});
     autoUpdater.on('error',error=>emit('update:status',{state:'error',message:error.message}));
     setTimeout(()=>autoUpdater.checkForUpdates().catch(()=>{}),7000);
-    setInterval(()=>autoUpdater.checkForUpdates().catch(()=>{}),6*60*60*1000);
+    setInterval(()=>autoUpdater.checkForUpdates().catch(()=>{}),30*60*1000);
   }
 });
 app.on('window-all-closed',()=>{if(process.platform!=='darwin')app.quit();});
