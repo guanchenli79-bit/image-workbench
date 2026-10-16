@@ -45,7 +45,7 @@
             <div class="ratio-select-wrap"><select id="ratioGrid" aria-label="??????"></select><span class="select-caret">?</span></div><p class="field-note" id="resolvedSize">????????</p>
           </section>
           <section class="field-section prompt-section"><div class="field-heading"><div><h3>???</h3><span class="hint">??????????</span></div><span id="promptCount">0 / 8000</span></div>
-            <textarea id="promptInput" maxlength="8000" placeholder="???????????"></textarea>
+            <div class="prompt-input-wrap"><textarea id="promptInput" maxlength="8000" placeholder="???????????"></textarea><button id="expandPromptButton" class="prompt-expand-button" type="button" title="????????" aria-label="????????" aria-expanded="false">?</button></div>
           </section>
           <div class="action-bar"><div class="action-explain"><span class="action-dot"></span><span id="actionHint">?????????????</span></div><label id="secondsLabel" class="duration-control" hidden>?? <select id="secondsSelect"></select> ?</label><button class="generate-button" id="generateButton" type="button"><span>?</span> ???? <span class="button-arrow">?</span></button></div>
         </section>
@@ -58,7 +58,8 @@
     <label class="field-label" for="baseUrlInput">????</label><input id="baseUrlInput" type="url" value="https://www.geeknow.top" required><small class="input-note">? Geeknow ??????????????????????</small>
     <div class="modal-actions"><button type="button" class="ghost-button" id="clearKeyButton">?? Key</button><div class="settings-actions"><button type="button" class="ghost-button" id="verifyKeyButton">????</button><button type="submit" class="primary-button">????</button></div></div>
   </form></dialog>
-  <dialog id="updateDialog" class="modal update-modal" aria-labelledby="updateTitle"><div class="modal-head"><div><span class="eyebrow">APP UPDATE</span><h2 id="updateTitle">?????</h2></div><button class="modal-close" id="closeUpdateDialog" type="button" aria-label="??">?</button></div><p class="modal-intro" id="updateDescription">??????????????????</p><div class="modal-actions"><button type="button" class="ghost-button" id="updateLaterButton">????</button><button type="button" class="primary-button" id="updateActionButton">????</button></div></dialog>
+  <dialog id="updateDialog" class="modal update-modal" aria-labelledby="updateTitle"><div class="modal-head"><div><span class="eyebrow">APP UPDATE</span><h2 id="updateTitle">?????</h2></div><button class="modal-close" id="closeUpdateDialog" type="button" aria-label="??">?</button></div><p class="modal-intro" id="updateDescription">??????????????????</p><div class="update-notes"><strong>??????</strong><div id="updateNotesText">?????????</div></div><div class="modal-actions"><button type="button" class="ghost-button" id="updateLaterButton">????</button><button type="button" class="primary-button" id="updateActionButton">????</button></div></dialog>
+  <dialog id="imagePreviewDialog" class="image-preview-dialog" aria-label="????"><div class="image-preview-toolbar"><span>???? ? ???????</span><button id="closeImagePreview" type="button" aria-label="??????">?</button></div><div class="image-preview-stage"><img id="imagePreview" alt="???????"></div></dialog>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <script src="app.js"></script>
 </body>

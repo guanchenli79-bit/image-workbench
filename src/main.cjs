@@ -9,6 +9,7 @@ const { resolveSize } = require('./sizing.cjs');
 const { normalizeBase, requestJson, generateImage, generateVideo, queryTask } = require('./api.cjs');
 const { networkFetch } = require('./network.cjs');
 const { recoverSubmittedMidjourney } = require('./recovery.cjs');
+const { releaseNotesText } = require('./update-notes.cjs');
 
 protocol.registerSchemesAsPrivileged([{scheme:'workbench-media',privileges:{secure:true,standard:true,supportFetchAPI:true,stream:true}}]);
 
@@ -153,15 +154,15 @@ async function pollTasks() {
   polling=true;
   try {
     const pending=records.filter(r=>r.status==='pending' && r.taskId);
-    for(const record of pending) {
+    await Promise.allSettled(pending.map(async record=>{
       try {
         const result=await queryTask(settings,record.taskAdapter,record.taskId,record.type);
-        if(!records.includes(record))continue;
+        if(!records.includes(record))return;
         if(result.status==='complete') await completeRecord(record,result.items,{...settings});
         else if(result.status==='failed') {record.status='failed';record.error=result.error;await persistRecords();}
         else if(record.progress!==result.progress) {record.progress=result.progress;await persistRecords();}
       } catch(error) { if(records.includes(record)){record.lastPollError=error.message;await persistRecords();} }
-    }
+    }));
   } finally {polling=false;}
 }
 
@@ -277,11 +278,12 @@ app.whenReady().then(async()=>{
   setInterval(pruneExpired,60*1000);setInterval(pollTasks,15*1000);setTimeout(pollTasks,2000);
   if(app.isPackaged){
     autoUpdater.autoDownload=false;autoUpdater.autoInstallOnAppQuit=false;
+    autoUpdater.fullChangelog=true;
     autoUpdater.on('checking-for-update',()=>emit('update:status',{state:'checking'}));
-    autoUpdater.on('update-available',info=>{if(updateReady&&readyVersion===info.version)return;availableUpdate=true;updateReady=false;readyVersion=null;emit('update:status',{state:'available',version:info.version});});
+    autoUpdater.on('update-available',info=>{if(updateReady&&readyVersion===info.version)return;availableUpdate=true;updateReady=false;readyVersion=null;emit('update:status',{state:'available',version:info.version,notes:releaseNotesText(info.releaseNotes)});});
     autoUpdater.on('update-not-available',()=>{if(!updateReady){availableUpdate=false;emit('update:status',{state:'current'});}});
     autoUpdater.on('download-progress',p=>emit('update:status',{state:'downloading',percent:Math.round(p.percent)}));
-    autoUpdater.on('update-downloaded',info=>{updateReady=true;readyVersion=info.version;emit('update:status',{state:'ready',version:info.version});});
+    autoUpdater.on('update-downloaded',info=>{updateReady=true;readyVersion=info.version;const notes=releaseNotesText(info.releaseNotes);emit('update:status',{state:'ready',version:info.version,...(notes?{notes}:{})});});
     autoUpdater.on('error',error=>emit('update:status',{state:'error',message:error.message}));
     setTimeout(()=>autoUpdater.checkForUpdates().catch(()=>{}),7000);
     setInterval(()=>autoUpdater.checkForUpdates().catch(()=>{}),30*60*1000);

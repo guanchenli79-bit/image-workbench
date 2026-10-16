@@ -6,6 +6,14 @@ const {imageModels,presets}=require('../src/catalog.cjs');
 const {autoRatio,resolveSize}=require('../src/sizing.cjs');
 const {normalizeBase,requestJson,generateImage,queryTask}=require('../src/api.cjs');
 const {recoverSubmittedMidjourney}=require('../src/recovery.cjs');
+const {releaseNotesText}=require('../src/update-notes.cjs');
+
+test('????????????????? HTML ??',()=>{
+  const notes=releaseNotesText([{version:'0.1.6',note:'<h2>??</h2><ul><li>????</li><li>????</li></ul>'},{version:'0.1.5',note:'## ??\n- Midjourney ???'}]);
+  assert.match(notes,/v0\.1\.6\n??\n? ????/);
+  assert.match(notes,/v0\.1\.5\n??\n- Midjourney ???/);
+  assert.doesNotMatch(notes,/<[^>]+>/);
+});
 
 test('????? auto ? 13 ?????????',()=>{
   assert.deepEqual(presets.map(x=>x.dimensions),['auto','1024x1024','1672x941','941x1672','1443x1090','1090x1443','1536x1024','1024x1536','1408x1120','1120x1408','1920x832','832x1920','1792x896','896x1792']);

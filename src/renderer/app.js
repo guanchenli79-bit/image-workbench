@@ -1,5 +1,5 @@
 const $ = id => document.getElementById(id);
-const state = {view:'image',presetId:'auto',modelId:'gpt-image-2-vip',references:[],imageModels:[],videoModels:[],presets:[],history:[],settings:null,busy:false,update:{state:'idle',version:null,percent:0},dismissedUpdateVersion:null,dismissedReadyVersion:null};
+const state = {view:'image',presetId:'auto',modelId:'gpt-image-2-vip',references:[],imageModels:[],videoModels:[],presets:[],history:[],settings:null,activeSubmissions:0,lastSubmitAt:0,update:{state:'idle',version:null,percent:0},dismissedUpdateVersion:null,dismissedReadyVersion:null};
 let toastTimer;
 
 function setTheme(theme){
@@ -13,13 +13,16 @@ function setTheme(theme){
 setTheme(localStorage.getItem('workbench-theme'));
 
 function renderUpdate(data){
+  const previousVersion=state.update.version;
   state.update={...state.update,...data};
+  if(data.version&&data.version!==previousVersion&&!('notes' in data))state.update.notes='';
   const status=state.update;
   const button=$('updateButton');
   const dialog=$('updateDialog');
   const action=$('updateActionButton');
   const title=$('updateTitle');
   const description=$('updateDescription');
+  $('updateNotesText').textContent=status.notes||'????????????? GitHub Releases ???';
   if(status.state==='current'){button.hidden=true;return;}
   if(status.state==='checking'||status.state==='idle')return;
   button.hidden=false;
@@ -102,23 +105,33 @@ function setView(view) {
   $('promptInput').placeholder=view==='video'?'??????????????':'?????????????????';
   if(!history)renderModels();else renderHistory();
 }
-function statusLabel(record){return {submitting:'???',pending:`??? ${record.progress||0}%`,complete:'???',failed:'????',expired:'???'}[record.status]||record.status;}
-function mediaElement(record,index=0){if(record.status!=='complete'||!record.media?.[index])return null;const el=document.createElement(record.type==='video'?'video':'img');el.src=record.media[index];if(record.type==='video'){el.controls=true;el.preload='metadata';}else el.alt=record.prompt;return el;}
+function statusLabel(record){return {submitting:'???',pending:Number(record.progress)>0?`??? ${Math.min(99,Math.round(Number(record.progress)))}%`:'???',complete:'???',failed:'????',expired:'???'}[record.status]||record.status;}
+function showImagePreview(src,alt){const dialog=$('imagePreviewDialog');$('imagePreview').src=src;$('imagePreview').alt=alt||'????';if(!dialog.open)dialog.showModal();}
+function mediaElement(record,index=0){if(record.status!=='complete'||!record.media?.[index])return null;const el=document.createElement(record.type==='video'?'video':'img');el.src=record.media[index];if(record.type==='video'){el.controls=true;el.preload='metadata';}else{el.alt=record.prompt;el.classList.add('zoomable-image');el.title='??????';el.addEventListener('dblclick',()=>showImagePreview(el.src,el.alt));}return el;}
+function progressElement(record){if(!['submitting','pending','complete'].includes(record.status))return null;const progress=Number(record.progress);const known=record.status==='complete'||(record.status==='pending'&&Number.isFinite(progress)&&progress>0);const percent=record.status==='complete'?100:known?Math.min(99,Math.max(1,Math.round(progress))):0;const box=document.createElement('div');box.className=`task-progress${known?'':' task-progress-indeterminate'}${record.status==='complete'?' task-progress-complete':''}`;box.setAttribute('role','progressbar');box.setAttribute('aria-label',record.type==='video'?'??????':'??????');if(known)box.setAttribute('aria-valuenow',String(percent));box.setAttribute('aria-valuemin','0');box.setAttribute('aria-valuemax','100');const label=document.createElement('div');label.className='task-progress-label';label.innerHTML=`<span>${record.status==='complete'?'????':record.status==='submitting'?'????':'????'}</span><span>${known?`${percent}%`:'???'}</span>`;const track=document.createElement('div');track.className='task-progress-track';const fill=document.createElement('span');fill.className='task-progress-fill';if(known)fill.style.width=`${percent}%`;track.append(fill);box.append(label,track);return box;}
 function renderRecentCard(record){const card=document.createElement('article');card.className='recent-card';const thumb=document.createElement('div');thumb.className='recent-thumb';const media=mediaElement(record);if(media)thumb.append(media);else{const p=document.createElement('span');p.className='thumb-placeholder';p.textContent=record.type==='video'?'?':'?';thumb.append(p);}const status=document.createElement('span');status.className='recent-status';status.textContent=statusLabel(record);thumb.append(status);
   const meta=document.createElement('div');meta.className='recent-meta';const title=document.createElement('strong');title.textContent=record.prompt;const small=document.createElement('small');small.textContent=`${record.modelName} ? ${formatDate(record.createdAt)}`;meta.append(title,small);
+  const progress=progressElement(record);if(progress)meta.append(progress);
   if(record.status==='complete'){const actions=document.createElement('div');actions.className='recent-actions';record.media.forEach((_,i)=>{const b=document.createElement('button');b.textContent=record.media.length>1?`??? ${i+1} ?`:'????';b.addEventListener('click',()=>saveMedia(record,i));actions.append(b);});meta.append(actions);}else if(record.status==='failed'){const error=document.createElement('small');error.textContent=record.error||record.lastPollError||'????';meta.append(error);}else if(record.status==='expired'){const expired=document.createElement('small');expired.textContent='?????????';meta.append(expired);}card.append(thumb,meta);return card;}
 function renderHistory(){const recent=$('recentList');const full=$('historyFullList');$('clearHistoryButton').disabled=!state.history.length;recent.replaceChildren();full.replaceChildren();if(!state.history.length){const empty=document.createElement('div');empty.className='empty-history';const s=document.createElement('span');s.textContent='?';empty.append(s,document.createTextNode('?????\n????????'));recent.append(empty);const clone=empty.cloneNode(true);full.append(clone);return;}
   state.history.slice(0,8).forEach(r=>recent.append(renderRecentCard(r)));
-  for(const r of state.history){const card=document.createElement('article');card.className='history-card';const preview=document.createElement('div');preview.className='history-preview';const media=mediaElement(r);if(media)preview.append(media);else{const p=document.createElement('span');p.className='thumb-placeholder';p.textContent=r.status==='expired'?'?':r.type==='video'?'?':'?';preview.append(p);}const copy=document.createElement('div');copy.className='history-copy';const h=document.createElement('h3');h.textContent=r.modelName;const p=document.createElement('p');p.textContent=r.prompt;const small=document.createElement('small');small.textContent=`${formatDate(r.createdAt)} ? ${statusLabel(r)}${r.actualSize?' ? '+r.actualSize:''}`;copy.append(h,p,small);if(r.status==='complete'){r.media.forEach((_,i)=>{const b=document.createElement('button');b.textContent=r.media.length>1?`?? ${i+1}`:'????';b.addEventListener('click',()=>saveMedia(r,i));copy.append(b);});}if(r.status==='failed'){const err=document.createElement('p');err.textContent=r.error||r.lastPollError||'';copy.append(err);}card.append(preview,copy);full.append(card);}
+  for(const r of state.history){const card=document.createElement('article');card.className='history-card';const preview=document.createElement('div');preview.className='history-preview';const media=mediaElement(r);if(media)preview.append(media);else{const p=document.createElement('span');p.className='thumb-placeholder';p.textContent=r.status==='expired'?'?':r.type==='video'?'?':'?';preview.append(p);}const copy=document.createElement('div');copy.className='history-copy';const h=document.createElement('h3');h.textContent=r.modelName;const p=document.createElement('p');p.textContent=r.prompt;const small=document.createElement('small');small.textContent=`${formatDate(r.createdAt)} ? ${statusLabel(r)}${r.actualSize?' ? '+r.actualSize:''}`;copy.append(h,p,small);const progress=progressElement(r);if(progress)copy.append(progress);if(r.status==='complete'){r.media.forEach((_,i)=>{const b=document.createElement('button');b.textContent=r.media.length>1?`?? ${i+1}`:'????';b.addEventListener('click',()=>saveMedia(r,i));copy.append(b);});}if(r.status==='failed'){const err=document.createElement('p');err.textContent=r.error||r.lastPollError||'';copy.append(err);}card.append(preview,copy);full.append(card);}
 }
 async function saveMedia(record,index){try{const done=await window.workbench.saveResult(record.id,index);if(done)toast('????????????');}catch(e){toast(e.message);}}
-async function doGenerate(){if(state.busy)return;if(!state.settings.hasKey){$('settingsDialog').showModal();toast('???? API Key');return;}const model=currentModel();const prompt=$('promptInput').value.trim();if(!prompt){toast('???????');$('promptInput').focus();return;}if(model.requiredRefs&&!state.references.length){toast('????????');return;}if(state.references.length&&!model.refs){toast('?????????');return;}
-  state.busy=true;$('generateButton').disabled=true;$('generateButton').textContent='?????';
-  try{const result=await window.workbench.generate({type:state.view,modelId:model.id,prompt,presetId:state.presetId,referenceIds:state.references.map(r=>r.id),referenceDimensions:referenceDimensions(),seconds:Number($('secondsSelect').value)});toast(result.status==='cleared'?'?????????':result.status==='complete'?'????????????':'?????????????????');state.history=await window.workbench.history();renderHistory();}
+async function doGenerate(){if(!state.settings.hasKey){$('settingsDialog').showModal();toast('???? API Key');return;}const model=currentModel();const prompt=$('promptInput').value.trim();if(!prompt){toast('???????');$('promptInput').focus();return;}if(model.requiredRefs&&!state.references.length){toast('????????');return;}if(state.references.length&&!model.refs){toast('?????????');return;}
+  if(Date.now()-state.lastSubmitAt<600)return;
+  state.lastSubmitAt=Date.now();
+  const input={type:state.view,modelId:model.id,prompt,presetId:state.presetId,referenceIds:state.references.map(r=>r.id),referenceDimensions:referenceDimensions(),seconds:Number($('secondsSelect').value)};
+  state.activeSubmissions++;$('generateButton').innerHTML=`<span>?</span> ???? ? ${state.activeSubmissions} ???? <span class="button-arrow">?</span>`;
+  try{const result=await window.workbench.generate(input);toast(result.status==='cleared'?'?????????':result.status==='complete'?'????????????':'???????????????');state.history=await window.workbench.history();renderHistory();}
   catch(e){toast((e.message||'????').replace(/^Error invoking remote method '[^']+': Error: /,''));state.history=await window.workbench.history();renderHistory();}
-  finally{state.busy=false;$('generateButton').disabled=false;$('generateButton').innerHTML='<span>?</span> ???? <span class="button-arrow">?</span>';}
+  finally{state.activeSubmissions--;const count=state.activeSubmissions;$('generateButton').innerHTML=`<span>?</span> ${count?`???? ? ${count} ????`:'????'} <span class="button-arrow">?</span>`;}
 }
 function bindEvents(){document.querySelectorAll('.nav-item').forEach(b=>b.addEventListener('click',()=>setView(b.dataset.view)));$('allHistoryButton').addEventListener('click',()=>setView('history'));
+  $('expandPromptButton').addEventListener('click',()=>{const wrap=document.querySelector('.prompt-input-wrap');const expanded=wrap.classList.toggle('expanded');const button=$('expandPromptButton');button.setAttribute('aria-expanded',String(expanded));button.setAttribute('aria-label',expanded?'????????':'????????');button.title=expanded?'????????':'????????';button.textContent=expanded?'?':'?';$('promptInput').focus();if(expanded)requestAnimationFrame(()=>$('promptInput').scrollIntoView({block:'center',behavior:'smooth'}));});
+  $('closeImagePreview').addEventListener('click',()=>$('imagePreviewDialog').close());
+  $('imagePreviewDialog').addEventListener('click',event=>{if(event.target===$('imagePreviewDialog'))$('imagePreviewDialog').close();});
+  $('imagePreviewDialog').addEventListener('close',()=>{$('imagePreview').removeAttribute('src');});
   $('clearHistoryButton').addEventListener('click',async()=>{try{const result=await window.workbench.clearHistory();if(result.cleared){state.history=[];renderHistory();toast(`??? ${result.count} ?????`);}}catch(error){toast(error.message);}});
   $('themeToggle').addEventListener('click',()=>setTheme(document.documentElement.dataset.theme==='dark'?'light':'dark'));
   $('updateButton').addEventListener('click',()=>$('updateDialog').showModal());
