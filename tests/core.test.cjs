@@ -1,6 +1,7 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
 const http=require('node:http');
+const net=require('node:net');
 const {imageModels,presets}=require('../src/catalog.cjs');
 const {autoRatio,resolveSize}=require('../src/sizing.cjs');
 const {normalizeBase,requestJson}=require('../src/api.cjs');
@@ -31,3 +32,31 @@ test('API Key 用 Bearer 头发送到指定基础地址',async()=>{
   finally{await new Promise(resolve=>server.close(resolve));}
 });
 test('远程 HTTP 接口不可接收 API Key',()=>assert.throws(()=>normalizeBase('http://example.com'),/HTTPS/));
+test('请求会经过 HTTP_PROXY 指定的代理',async()=>{
+  const target=http.createServer((req,res)=>{res.setHeader('Content-Type','application/json');res.end(JSON.stringify({data:[]}));});
+  const proxy=http.createServer();
+  let proxied=false;
+  proxy.on('connect',(req,client,head)=>{
+    proxied=true;
+    const [host,port]=req.url.split(':');
+    const upstream=net.connect(Number(port),host,()=>{client.write('HTTP/1.1 200 Connection Established\r\n\r\n');if(head.length)upstream.write(head);client.pipe(upstream);upstream.pipe(client);});
+    upstream.on('error',()=>client.destroy());client.on('error',()=>upstream.destroy());
+  });
+  await new Promise(resolve=>target.listen(0,'127.0.0.1',resolve));
+  await new Promise(resolve=>proxy.listen(0,'127.0.0.1',resolve));
+  try {
+    const old={HTTP_PROXY:process.env.HTTP_PROXY,HTTPS_PROXY:process.env.HTTPS_PROXY,NO_PROXY:process.env.NO_PROXY};
+    const modulePath=require.resolve('../src/network.cjs');
+    try {
+      process.env.HTTP_PROXY=`http://127.0.0.1:${proxy.address().port}`;
+      process.env.HTTPS_PROXY=process.env.HTTP_PROXY;process.env.NO_PROXY='';
+      delete require.cache[modulePath];
+      const {networkFetch}=require('../src/network.cjs');
+      const response=await networkFetch(`http://127.0.0.1:${target.address().port}/v1/models`);
+      assert.equal(response.status,200);assert.equal(proxied,true);
+    } finally {
+      for(const [key,value] of Object.entries(old)){if(value===undefined)delete process.env[key];else process.env[key]=value;}
+      delete require.cache[modulePath];
+    }
+  } finally {proxy.closeAllConnections();target.closeAllConnections();await Promise.all([new Promise(resolve=>proxy.close(resolve)),new Promise(resolve=>target.close(resolve))]);}
+});
