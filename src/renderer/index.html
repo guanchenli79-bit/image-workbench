@@ -45,7 +45,7 @@
             <div class="ratio-select-wrap"><select id="ratioGrid" aria-label="选择画幅比例"></select><span class="select-caret">⌄</span></div><p class="field-note" id="resolvedSize">实际提交尺寸：—</p>
           </section>
           <section class="field-section prompt-section"><div class="field-heading"><div><h3>提示词</h3><span class="hint">描述内容、风格与细节</span></div><span id="promptCount">0 / 8000</span></div>
-            <textarea id="promptInput" maxlength="8000" placeholder="描述你想创作的画面……"></textarea>
+            <div class="prompt-input-wrap"><textarea id="promptInput" maxlength="8000" placeholder="描述你想创作的画面……"></textarea><button id="expandPromptButton" class="prompt-expand-button" type="button" title="展开提示词输入框" aria-label="展开提示词输入框" aria-expanded="false">⤢</button></div>
           </section>
           <div class="action-bar"><div class="action-explain"><span class="action-dot"></span><span id="actionHint">准备就绪，开始创作你的图像</span></div><label id="secondsLabel" class="duration-control" hidden>时长 <select id="secondsSelect"></select> 秒</label><button class="generate-button" id="generateButton" type="button"><span>✦</span> 立即生成 <span class="button-arrow">↗</span></button></div>
         </section>
@@ -58,7 +58,8 @@
     <label class="field-label" for="baseUrlInput">接口地址</label><input id="baseUrlInput" type="url" value="https://www.geeknow.top" required><small class="input-note">按 Geeknow 官方文档预填。如接口地址变更，可在这里修改。</small>
     <div class="modal-actions"><button type="button" class="ghost-button" id="clearKeyButton">清除 Key</button><div class="settings-actions"><button type="button" class="ghost-button" id="verifyKeyButton">测试连接</button><button type="submit" class="primary-button">保存设置</button></div></div>
   </form></dialog>
-  <dialog id="updateDialog" class="modal update-modal" aria-labelledby="updateTitle"><div class="modal-head"><div><span class="eyebrow">APP UPDATE</span><h2 id="updateTitle">发现新版本</h2></div><button class="modal-close" id="closeUpdateDialog" type="button" aria-label="关闭">×</button></div><p class="modal-intro" id="updateDescription">新版本已经发布，你可以选择何时更新。</p><div class="modal-actions"><button type="button" class="ghost-button" id="updateLaterButton">稍后再说</button><button type="button" class="primary-button" id="updateActionButton">下载更新</button></div></dialog>
+  <dialog id="updateDialog" class="modal update-modal" aria-labelledby="updateTitle"><div class="modal-head"><div><span class="eyebrow">APP UPDATE</span><h2 id="updateTitle">发现新版本</h2></div><button class="modal-close" id="closeUpdateDialog" type="button" aria-label="关闭">×</button></div><p class="modal-intro" id="updateDescription">新版本已经发布，你可以选择何时更新。</p><div class="update-notes"><strong>本次更新内容</strong><div id="updateNotesText">正在读取更新说明…</div></div><div class="modal-actions"><button type="button" class="ghost-button" id="updateLaterButton">稍后再说</button><button type="button" class="primary-button" id="updateActionButton">下载更新</button></div></dialog>
+  <dialog id="imagePreviewDialog" class="image-preview-dialog" aria-label="图片预览"><div class="image-preview-toolbar"><span>图片预览 · 双击图片可打开</span><button id="closeImagePreview" type="button" aria-label="关闭图片预览">×</button></div><div class="image-preview-stage"><img id="imagePreview" alt="放大的生成图片"></div></dialog>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <script src="app.js"></script>
 </body>

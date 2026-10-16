@@ -6,6 +6,14 @@ const {imageModels,presets}=require('../src/catalog.cjs');
 const {autoRatio,resolveSize}=require('../src/sizing.cjs');
 const {normalizeBase,requestJson,generateImage,queryTask}=require('../src/api.cjs');
 const {recoverSubmittedMidjourney}=require('../src/recovery.cjs');
+const {releaseNotesText}=require('../src/update-notes.cjs');
+
+test('更新弹窗能展示多个版本的说明并清理 HTML 标记',()=>{
+  const notes=releaseNotesText([{version:'0.1.6',note:'<h2>新增</h2><ul><li>并行任务</li><li>图片放大</li></ul>'},{version:'0.1.5',note:'## 修复\n- Midjourney 参考图'}]);
+  assert.match(notes,/v0\.1\.6\n新增\n• 并行任务/);
+  assert.match(notes,/v0\.1\.5\n修复\n- Midjourney 参考图/);
+  assert.doesNotMatch(notes,/<[^>]+>/);
+});
 
 test('用户要求的 auto 和 13 个固定画幅全部存在',()=>{
   assert.deepEqual(presets.map(x=>x.dimensions),['auto','1024x1024','1672x941','941x1672','1443x1090','1090x1443','1536x1024','1024x1536','1408x1120','1120x1408','1920x832','832x1920','1792x896','896x1792']);

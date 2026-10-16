@@ -25,6 +25,10 @@ textarea{min-height:112px;line-height:1.65}
 .clear-history-button:hover{background:#fff0ed;border-color:#dbaba5}
 .update-modal{max-width:calc(100vw - 30px)}
 .update-modal .modal-intro{margin-bottom:24px}
+.update-modal{width:560px}
+.update-notes{border:1px solid #e3e8f2;background:#f8faff;border-radius:13px;padding:15px 17px;color:#455169}
+.update-notes strong{display:block;font-size:13px;margin-bottom:9px}
+.update-notes #updateNotesText{white-space:pre-wrap;overflow-wrap:anywhere;max-height:260px;overflow:auto;font-size:13px;line-height:1.75;color:#66728a}
 .modal-close{width:34px;height:34px}
 .primary-button,.ghost-button{min-height:40px}
 
@@ -118,3 +122,35 @@ textarea{min-height:112px;line-height:1.65}
 :root[data-theme="dark"] .toast{background:#dae3ff;color:#202a42}
 @media(max-width:1150px){.top-actions{gap:7px}.theme-toggle,.update-button,.settings-button{padding:9px 10px;font-size:13px}}
 @media(max-width:850px){.top-actions{margin-left:auto}.theme-toggle,.update-button,.settings-button{font-size:12px}.notice strong{font-size:13px}}
+
+.task-progress{margin-top:11px}
+.task-progress-label{display:flex;justify-content:space-between;gap:12px;margin-bottom:7px;font-size:11px;font-weight:600;color:#69758e}
+.task-progress-track{height:7px;overflow:hidden;border-radius:99px;background:#e9edfa}
+.task-progress-fill{display:block;width:0;height:100%;border-radius:inherit;background:linear-gradient(90deg,#8195f5,#5269e4);transition:width .7s cubic-bezier(.2,.75,.25,1)}
+.task-progress-complete .task-progress-fill{background:linear-gradient(90deg,#6bc7ac,#37a787)}
+.task-progress-indeterminate .task-progress-fill{width:36%;animation:progress-sweep 1.65s ease-in-out infinite}
+@keyframes progress-sweep{0%{transform:translateX(-115%)}100%{transform:translateX(285%)}}
+.history-copy .task-progress{margin:11px 0 4px}
+.zoomable-image{cursor:zoom-in}
+.prompt-input-wrap{position:relative}
+.prompt-input-wrap textarea{padding-right:54px}
+.prompt-expand-button{position:absolute;top:9px;right:9px;width:32px;height:32px;border:1px solid #e1e6f1;border-radius:10px;background:#f7f9fd;color:#7c8ba9;font-size:19px;line-height:1;display:grid;place-items:center;box-shadow:0 2px 7px #2a37500a}
+.prompt-expand-button:hover{background:#e9eeff;border-color:#9daff3;color:#465fca;box-shadow:0 4px 14px #5269e42c;transform:translateY(-1px)}
+.prompt-input-wrap.expanded textarea{height:min(42vh,460px);min-height:280px;max-height:none}
+.image-preview-dialog{width:min(94vw,1440px);height:90vh;max-width:none;max-height:none;padding:0;border:1px solid #dce2ee;border-radius:18px;background:#f7f9fc;box-shadow:0 30px 100px #18243e55;overflow:hidden}
+.image-preview-dialog::backdrop{background:#101828c9;backdrop-filter:blur(9px)}
+.image-preview-toolbar{height:52px;padding:0 15px 0 20px;display:flex;align-items:center;justify-content:space-between;color:#64708a;font-size:12px;background:#fff;border-bottom:1px solid #e7eaf1}
+.image-preview-toolbar button{width:34px;height:34px;border:0;border-radius:10px;background:#f0f2f7;color:#64708a;font-size:23px;line-height:1}
+.image-preview-toolbar button:hover{background:#e4e9fa;color:#445dc8}
+.image-preview-stage{height:calc(100% - 52px);display:grid;place-items:center;padding:18px;overflow:auto}
+.image-preview-stage img{max-width:100%;max-height:100%;object-fit:contain;box-shadow:0 12px 40px #19243e1c;border-radius:6px}
+:root[data-theme="dark"] .task-progress-label{color:#b6c2d8}
+:root[data-theme="dark"] .task-progress-track{background:#303d57}
+:root[data-theme="dark"] .prompt-expand-button{background:#293345;border-color:#40506a;color:#b6c7ea}
+:root[data-theme="dark"] .prompt-expand-button:hover{background:#3a4c77;border-color:#7289d8;color:#eef2ff}
+:root[data-theme="dark"] .image-preview-dialog{background:#131b29;border-color:#43516a}
+:root[data-theme="dark"] .image-preview-toolbar{background:#202b3c;border-color:#3b4961;color:#d5deee}
+:root[data-theme="dark"] .image-preview-toolbar button{background:#334156;color:#d5deee}
+:root[data-theme="dark"] .update-notes{background:#202d42;border-color:#465675;color:#e0e8f8}
+:root[data-theme="dark"] .update-notes #updateNotesText{color:#c1cce0}
+@media(prefers-reduced-motion:reduce){.task-progress-indeterminate .task-progress-fill{animation:none;width:36%}.task-progress-fill{transition:none}}

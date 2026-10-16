@@ -1,5 +1,5 @@
 const $ = id => document.getElementById(id);
-const state = {view:'image',presetId:'auto',modelId:'gpt-image-2-vip',references:[],imageModels:[],videoModels:[],presets:[],history:[],settings:null,busy:false,update:{state:'idle',version:null,percent:0},dismissedUpdateVersion:null,dismissedReadyVersion:null};
+const state = {view:'image',presetId:'auto',modelId:'gpt-image-2-vip',references:[],imageModels:[],videoModels:[],presets:[],history:[],settings:null,activeSubmissions:0,lastSubmitAt:0,update:{state:'idle',version:null,percent:0},dismissedUpdateVersion:null,dismissedReadyVersion:null};
 let toastTimer;
 
 function setTheme(theme){
@@ -13,13 +13,16 @@ function setTheme(theme){
 setTheme(localStorage.getItem('workbench-theme'));
 
 function renderUpdate(data){
+  const previousVersion=state.update.version;
   state.update={...state.update,...data};
+  if(data.version&&data.version!==previousVersion&&!('notes' in data))state.update.notes='';
   const status=state.update;
   const button=$('updateButton');
   const dialog=$('updateDialog');
   const action=$('updateActionButton');
   const title=$('updateTitle');
   const description=$('updateDescription');
+  $('updateNotesText').textContent=status.notes||'此次更新说明暂未获取，请到 GitHub Releases 查看。';
   if(status.state==='current'){button.hidden=true;return;}
   if(status.state==='checking'||status.state==='idle')return;
   button.hidden=false;
@@ -102,23 +105,33 @@ function setView(view) {
   $('promptInput').placeholder=view==='video'?'描述场景、动作和镜头运动……':'描述你想创作的画面、风格与细节……';
   if(!history)renderModels();else renderHistory();
 }
-function statusLabel(record){return {submitting:'提交中',pending:`生成中 ${record.progress||0}%`,complete:'已完成',failed:'生成失败',expired:'已过期'}[record.status]||record.status;}
-function mediaElement(record,index=0){if(record.status!=='complete'||!record.media?.[index])return null;const el=document.createElement(record.type==='video'?'video':'img');el.src=record.media[index];if(record.type==='video'){el.controls=true;el.preload='metadata';}else el.alt=record.prompt;return el;}
+function statusLabel(record){return {submitting:'提交中',pending:Number(record.progress)>0?`生成中 ${Math.min(99,Math.round(Number(record.progress)))}%`:'生成中',complete:'已完成',failed:'生成失败',expired:'已过期'}[record.status]||record.status;}
+function showImagePreview(src,alt){const dialog=$('imagePreviewDialog');$('imagePreview').src=src;$('imagePreview').alt=alt||'生成图片';if(!dialog.open)dialog.showModal();}
+function mediaElement(record,index=0){if(record.status!=='complete'||!record.media?.[index])return null;const el=document.createElement(record.type==='video'?'video':'img');el.src=record.media[index];if(record.type==='video'){el.controls=true;el.preload='metadata';}else{el.alt=record.prompt;el.classList.add('zoomable-image');el.title='双击放大查看';el.addEventListener('dblclick',()=>showImagePreview(el.src,el.alt));}return el;}
+function progressElement(record){if(!['submitting','pending','complete'].includes(record.status))return null;const progress=Number(record.progress);const known=record.status==='complete'||(record.status==='pending'&&Number.isFinite(progress)&&progress>0);const percent=record.status==='complete'?100:known?Math.min(99,Math.max(1,Math.round(progress))):0;const box=document.createElement('div');box.className=`task-progress${known?'':' task-progress-indeterminate'}${record.status==='complete'?' task-progress-complete':''}`;box.setAttribute('role','progressbar');box.setAttribute('aria-label',record.type==='video'?'视频生成进度':'图片生成进度');if(known)box.setAttribute('aria-valuenow',String(percent));box.setAttribute('aria-valuemin','0');box.setAttribute('aria-valuemax','100');const label=document.createElement('div');label.className='task-progress-label';label.innerHTML=`<span>${record.status==='complete'?'生成完成':record.status==='submitting'?'正在提交':'正在生成'}</span><span>${known?`${percent}%`:'处理中'}</span>`;const track=document.createElement('div');track.className='task-progress-track';const fill=document.createElement('span');fill.className='task-progress-fill';if(known)fill.style.width=`${percent}%`;track.append(fill);box.append(label,track);return box;}
 function renderRecentCard(record){const card=document.createElement('article');card.className='recent-card';const thumb=document.createElement('div');thumb.className='recent-thumb';const media=mediaElement(record);if(media)thumb.append(media);else{const p=document.createElement('span');p.className='thumb-placeholder';p.textContent=record.type==='video'?'▶':'✦';thumb.append(p);}const status=document.createElement('span');status.className='recent-status';status.textContent=statusLabel(record);thumb.append(status);
   const meta=document.createElement('div');meta.className='recent-meta';const title=document.createElement('strong');title.textContent=record.prompt;const small=document.createElement('small');small.textContent=`${record.modelName} · ${formatDate(record.createdAt)}`;meta.append(title,small);
+  const progress=progressElement(record);if(progress)meta.append(progress);
   if(record.status==='complete'){const actions=document.createElement('div');actions.className='recent-actions';record.media.forEach((_,i)=>{const b=document.createElement('button');b.textContent=record.media.length>1?`保存第 ${i+1} 张`:'保存作品';b.addEventListener('click',()=>saveMedia(record,i));actions.append(b);});meta.append(actions);}else if(record.status==='failed'){const error=document.createElement('small');error.textContent=record.error||record.lastPollError||'请求失败';meta.append(error);}else if(record.status==='expired'){const expired=document.createElement('small');expired.textContent='临时文件已自动清理';meta.append(expired);}card.append(thumb,meta);return card;}
 function renderHistory(){const recent=$('recentList');const full=$('historyFullList');$('clearHistoryButton').disabled=!state.history.length;recent.replaceChildren();full.replaceChildren();if(!state.history.length){const empty=document.createElement('div');empty.className='empty-history';const s=document.createElement('span');s.textContent='✦';empty.append(s,document.createTextNode('还没有作品\n开始第一次创作吧'));recent.append(empty);const clone=empty.cloneNode(true);full.append(clone);return;}
   state.history.slice(0,8).forEach(r=>recent.append(renderRecentCard(r)));
-  for(const r of state.history){const card=document.createElement('article');card.className='history-card';const preview=document.createElement('div');preview.className='history-preview';const media=mediaElement(r);if(media)preview.append(media);else{const p=document.createElement('span');p.className='thumb-placeholder';p.textContent=r.status==='expired'?'◷':r.type==='video'?'▶':'✦';preview.append(p);}const copy=document.createElement('div');copy.className='history-copy';const h=document.createElement('h3');h.textContent=r.modelName;const p=document.createElement('p');p.textContent=r.prompt;const small=document.createElement('small');small.textContent=`${formatDate(r.createdAt)} · ${statusLabel(r)}${r.actualSize?' · '+r.actualSize:''}`;copy.append(h,p,small);if(r.status==='complete'){r.media.forEach((_,i)=>{const b=document.createElement('button');b.textContent=r.media.length>1?`保存 ${i+1}`:'保存作品';b.addEventListener('click',()=>saveMedia(r,i));copy.append(b);});}if(r.status==='failed'){const err=document.createElement('p');err.textContent=r.error||r.lastPollError||'';copy.append(err);}card.append(preview,copy);full.append(card);}
+  for(const r of state.history){const card=document.createElement('article');card.className='history-card';const preview=document.createElement('div');preview.className='history-preview';const media=mediaElement(r);if(media)preview.append(media);else{const p=document.createElement('span');p.className='thumb-placeholder';p.textContent=r.status==='expired'?'◷':r.type==='video'?'▶':'✦';preview.append(p);}const copy=document.createElement('div');copy.className='history-copy';const h=document.createElement('h3');h.textContent=r.modelName;const p=document.createElement('p');p.textContent=r.prompt;const small=document.createElement('small');small.textContent=`${formatDate(r.createdAt)} · ${statusLabel(r)}${r.actualSize?' · '+r.actualSize:''}`;copy.append(h,p,small);const progress=progressElement(r);if(progress)copy.append(progress);if(r.status==='complete'){r.media.forEach((_,i)=>{const b=document.createElement('button');b.textContent=r.media.length>1?`保存 ${i+1}`:'保存作品';b.addEventListener('click',()=>saveMedia(r,i));copy.append(b);});}if(r.status==='failed'){const err=document.createElement('p');err.textContent=r.error||r.lastPollError||'';copy.append(err);}card.append(preview,copy);full.append(card);}
 }
 async function saveMedia(record,index){try{const done=await window.workbench.saveResult(record.id,index);if(done)toast('作品已永久保存到所选位置');}catch(e){toast(e.message);}}
-async function doGenerate(){if(state.busy)return;if(!state.settings.hasKey){$('settingsDialog').showModal();toast('请先设置 API Key');return;}const model=currentModel();const prompt=$('promptInput').value.trim();if(!prompt){toast('请先填写提示词');$('promptInput').focus();return;}if(model.requiredRefs&&!state.references.length){toast('该模型需要参考图');return;}if(state.references.length&&!model.refs){toast('该模型不支持参考图');return;}
-  state.busy=true;$('generateButton').disabled=true;$('generateButton').textContent='正在提交…';
-  try{const result=await window.workbench.generate({type:state.view,modelId:model.id,prompt,presetId:state.presetId,referenceIds:state.references.map(r=>r.id),referenceDimensions:referenceDimensions(),seconds:Number($('secondsSelect').value)});toast(result.status==='cleared'?'任务已从历史中清除':result.status==='complete'?'生成完成，请及时保存作品':'任务已提交，生成进度会显示在历史区');state.history=await window.workbench.history();renderHistory();}
+async function doGenerate(){if(!state.settings.hasKey){$('settingsDialog').showModal();toast('请先设置 API Key');return;}const model=currentModel();const prompt=$('promptInput').value.trim();if(!prompt){toast('请先填写提示词');$('promptInput').focus();return;}if(model.requiredRefs&&!state.references.length){toast('该模型需要参考图');return;}if(state.references.length&&!model.refs){toast('该模型不支持参考图');return;}
+  if(Date.now()-state.lastSubmitAt<600)return;
+  state.lastSubmitAt=Date.now();
+  const input={type:state.view,modelId:model.id,prompt,presetId:state.presetId,referenceIds:state.references.map(r=>r.id),referenceDimensions:referenceDimensions(),seconds:Number($('secondsSelect').value)};
+  state.activeSubmissions++;$('generateButton').innerHTML=`<span>✦</span> 继续生成 · ${state.activeSubmissions} 个提交中 <span class="button-arrow">↗</span>`;
+  try{const result=await window.workbench.generate(input);toast(result.status==='cleared'?'任务已从历史中清除':result.status==='complete'?'生成完成，请及时保存作品':'任务已提交，可继续创建其他任务');state.history=await window.workbench.history();renderHistory();}
   catch(e){toast((e.message||'生成失败').replace(/^Error invoking remote method '[^']+': Error: /,''));state.history=await window.workbench.history();renderHistory();}
-  finally{state.busy=false;$('generateButton').disabled=false;$('generateButton').innerHTML='<span>✦</span> 立即生成 <span class="button-arrow">↗</span>';}
+  finally{state.activeSubmissions--;const count=state.activeSubmissions;$('generateButton').innerHTML=`<span>✦</span> ${count?`继续生成 · ${count} 个提交中`:'立即生成'} <span class="button-arrow">↗</span>`;}
 }
 function bindEvents(){document.querySelectorAll('.nav-item').forEach(b=>b.addEventListener('click',()=>setView(b.dataset.view)));$('allHistoryButton').addEventListener('click',()=>setView('history'));
+  $('expandPromptButton').addEventListener('click',()=>{const wrap=document.querySelector('.prompt-input-wrap');const expanded=wrap.classList.toggle('expanded');const button=$('expandPromptButton');button.setAttribute('aria-expanded',String(expanded));button.setAttribute('aria-label',expanded?'收起提示词输入框':'展开提示词输入框');button.title=expanded?'收起提示词输入框':'展开提示词输入框';button.textContent=expanded?'⤡':'⤢';$('promptInput').focus();if(expanded)requestAnimationFrame(()=>$('promptInput').scrollIntoView({block:'center',behavior:'smooth'}));});
+  $('closeImagePreview').addEventListener('click',()=>$('imagePreviewDialog').close());
+  $('imagePreviewDialog').addEventListener('click',event=>{if(event.target===$('imagePreviewDialog'))$('imagePreviewDialog').close();});
+  $('imagePreviewDialog').addEventListener('close',()=>{$('imagePreview').removeAttribute('src');});
   $('clearHistoryButton').addEventListener('click',async()=>{try{const result=await window.workbench.clearHistory();if(result.cleared){state.history=[];renderHistory();toast(`已清空 ${result.count} 条历史任务`);}}catch(error){toast(error.message);}});
   $('themeToggle').addEventListener('click',()=>setTheme(document.documentElement.dataset.theme==='dark'?'light':'dark'));
   $('updateButton').addEventListener('click',()=>$('updateDialog').showModal());

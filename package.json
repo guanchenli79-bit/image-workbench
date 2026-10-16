@@ -1,6 +1,6 @@
 {
   "name": "image-workbench",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "private": true,
   "description": "Geeknow 图像与视频创作工作台",
   "main": "src/main.cjs",
