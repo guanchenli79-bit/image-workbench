@@ -32,6 +32,10 @@
       <div class="activation-foot"><span>一人一机 · 管理员审批</span><span id="activationVersion">画境工作台</span></div>
     </div>
   </section>
+  <div id="workspaceWallpaper" class="workspace-wallpaper" aria-hidden="true" hidden>
+    <video id="workspaceWallpaperVideo" autoplay muted loop playsinline preload="metadata" poster="../../assets/activation-poster.jpg"><source id="workspaceWallpaperSource" src="../../assets/activation-wallpaper.mp4" type="video/mp4"></video>
+    <img id="workspaceWallpaperImage" alt="" hidden>
+  </div>
   <div class="app-shell" hidden>
     <header class="topbar">
       <div class="brand"><img src="../../assets/logo.svg" alt="画境标识"><div><strong>画境</strong><small>IMAGE WORKBENCH</small></div></div>
@@ -40,7 +44,7 @@
         <button class="nav-item" data-view="video" type="button">视频生成</button>
         <button class="nav-item" data-view="history" type="button">全部历史</button>
       </nav>
-      <div class="top-actions"><span class="connection" id="connectionPill"><i></i> 尚未连接 API</span><button class="update-button" id="updateButton" type="button" hidden>发现新版本</button><button class="theme-toggle" id="themeToggle" type="button" aria-pressed="false">☾ 深色模式</button><button class="settings-button" id="settingsButton" type="button">设置 API Key <span>↗</span></button></div>
+      <div class="top-actions"><span class="connection" id="connectionPill"><i></i> 尚未连接 API</span><button class="update-button" id="updateButton" type="button" hidden>发现新版本</button><div class="wallpaper-control"><button class="wallpaper-toggle" id="wallpaperToggle" type="button" aria-expanded="false" aria-controls="wallpaperPopover">壁纸 <span id="wallpaperButtonValue">45%</span></button><div id="wallpaperPopover" class="wallpaper-popover" hidden><label for="wallpaperOpacity">壁纸不透明度 <output id="wallpaperOpacityValue" for="wallpaperOpacity">45%</output></label><input id="wallpaperOpacity" type="range" min="0" max="100" step="1" value="45"><p>调低可让页面更清晰；设置会保存在这台电脑。</p></div></div><button class="theme-toggle" id="themeToggle" type="button" aria-pressed="false">☾ 深色模式</button><button class="settings-button" id="settingsButton" type="button">设置 API Key <span>↗</span></button></div>
     </header>
 
     <div class="notice" role="note"><span class="notice-icon">!</span><strong>生成内容会在两小时后自动删除，请及时保存。</strong><span class="notice-detail">本机临时文件从完成时起计时</span></div>

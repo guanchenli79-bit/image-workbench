@@ -3,17 +3,39 @@ const state = {view:'image',presetId:'auto',modelId:'gpt-image-2-vip',resolution
 let toastTimer;
 let sizeNoteRequest=0;
 let workspaceBound=false;
+let wallpaperOpacity=45;
+const reducedWallpaperMotion=window.matchMedia('(prefers-reduced-motion: reduce)');
+function syncWallpaperPlayback(){
+  const activation=$('activationWallpaperVideo');
+  const workspace=$('workspaceWallpaperVideo');
+  for(const [video,visible] of [[activation,!$('activationScreen').hidden],[workspace,!$('workspaceWallpaper').hidden&&wallpaperOpacity>0]]){
+    if(!video.hidden&&visible&&!document.hidden&&!reducedWallpaperMotion.matches)video.play().catch(()=>{});
+    else video.pause();
+  }
+}
+function setWallpaperOpacity(value){
+  const parsed=Number(value);
+  wallpaperOpacity=Number.isFinite(parsed)?Math.max(0,Math.min(100,Math.round(parsed))):45;
+  document.documentElement.style.setProperty('--workspace-wallpaper-opacity',String(wallpaperOpacity/100));
+  $('wallpaperOpacity').value=String(wallpaperOpacity);
+  $('wallpaperOpacityValue').value=`${wallpaperOpacity}%`;
+  $('wallpaperButtonValue').textContent=`${wallpaperOpacity}%`;
+  localStorage.setItem('workbench-wallpaper-opacity',String(wallpaperOpacity));
+  syncWallpaperPlayback();
+}
 function applyWallpaper(wallpaper){
   if(!wallpaper)return;
-  const video=$('activationWallpaperVideo');const image=$('activationWallpaperImage');
-  if(wallpaper.kind==='image'){
-    image.src=wallpaper.url;image.hidden=false;video.hidden=true;video.pause();
-  }else{
-    image.hidden=true;image.removeAttribute('src');video.hidden=false;
-    const source=$('activationWallpaperSource');
-    if(source.getAttribute('src')!==wallpaper.url){source.type=wallpaper.url.toLowerCase().endsWith('.webm')?'video/webm':'video/mp4';source.src=wallpaper.url;video.load();}
-    video.play().catch(()=>{});
+  for(const prefix of ['activation','workspace']){
+    const video=$(`${prefix}WallpaperVideo`);const image=$(`${prefix}WallpaperImage`);
+    if(wallpaper.kind==='image'){
+      image.src=wallpaper.url;image.hidden=false;video.hidden=true;video.pause();
+    }else{
+      image.hidden=true;image.removeAttribute('src');video.hidden=false;
+      const source=$(`${prefix}WallpaperSource`);
+      if(source.getAttribute('src')!==wallpaper.url){source.type=wallpaper.url.toLowerCase().endsWith('.webm')?'video/webm':'video/mp4';source.src=wallpaper.url;video.load();}
+    }
   }
+  syncWallpaperPlayback();
 }
 function renderModelSync(){
   if(!state.settings)return;
@@ -39,14 +61,15 @@ function applyModelSnapshot(snapshot){
 
 function showActivation(license){
   document.querySelector('.app-shell').hidden=true;
+  $('workspaceWallpaper').hidden=true;
   $('activationScreen').hidden=false;
-  if(!$('activationWallpaperVideo').hidden)$('activationWallpaperVideo').play().catch(()=>{});
+  syncWallpaperPlayback();
   $('machineCodeValue').textContent=license.machineCode||'机器码读取失败';
   $('copyMachineCode').disabled=!license.machineCode;
   $('activationSubmit').disabled=!license.machineCode;
   const message=$('activationMessage');message.textContent=license.message||'填写姓名和手机号提交申请';message.className='activation-message';
 }
-function showWorkspace(){ $('activationScreen').hidden=true;$('activationWallpaperVideo').pause();document.querySelector('.app-shell').hidden=false; }
+function showWorkspace(){ $('activationScreen').hidden=true;$('workspaceWallpaper').hidden=false;document.querySelector('.app-shell').hidden=false;syncWallpaperPlayback(); }
 function bindActivation(){
   window.workbench.onWallpaper(applyWallpaper);
   $('copyMachineCode').addEventListener('click',async()=>{try{await window.workbench.copyMachineCode();$('activationMessage').textContent='机器码已复制';$('activationMessage').className='activation-message success';}catch(error){$('activationMessage').textContent=error.message;$('activationMessage').className='activation-message error';}});
@@ -74,6 +97,9 @@ function setTheme(theme){
   button.setAttribute('aria-pressed',String(chosen==='dark'));
 }
 setTheme(localStorage.getItem('workbench-theme'));
+setWallpaperOpacity(localStorage.getItem('workbench-wallpaper-opacity')??45);
+document.addEventListener('visibilitychange',syncWallpaperPlayback);
+reducedWallpaperMotion.addEventListener('change',syncWallpaperPlayback);
 
 function renderUpdate(data){
   const previousVersion=state.update.version;
@@ -119,6 +145,78 @@ function toast(message) { const el=$('toast'); el.textContent=message;el.classLi
 function formatDate(value) { return new Date(value).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}); }
 function currentModels() { return state.view==='video'?state.videoModels:state.imageModels; }
 function currentModel() { return currentModels().find(m=>m.id===state.modelId)||currentModels()[0]; }
+const smoothSelects=new Map();
+let openSmoothSelect=null;
+function closeSmoothSelect(restoreFocus=false){
+  if(!openSmoothSelect)return;
+  const item=openSmoothSelect;openSmoothSelect=null;
+  item.menu.classList.remove('is-open');item.trigger.setAttribute('aria-expanded','false');
+  if(restoreFocus)item.trigger.focus();
+}
+function positionSmoothSelect(item){
+  const rect=item.trigger.getBoundingClientRect();
+  const below=innerHeight-rect.bottom-12;const above=rect.top-12;
+  const up=below<210&&above>below;
+  const height=Math.max(100,Math.min(320,up?above:below));
+  item.menu.style.left=`${Math.max(8,Math.min(rect.left,innerWidth-rect.width-8))}px`;
+  item.menu.style.width=`${rect.width}px`;
+  item.menu.style.maxHeight=`${height}px`;
+  item.menu.style.top=up?'auto':`${rect.bottom+7}px`;
+  item.menu.style.bottom=up?`${innerHeight-rect.top+7}px`:'auto';
+  item.menu.style.transformOrigin=up?'bottom center':'top center';
+}
+function openSelect(item){
+  if(openSmoothSelect===item){closeSmoothSelect();return;}
+  closeSmoothSelect();openSmoothSelect=item;
+  positionSmoothSelect(item);
+  item.menu.classList.add('is-open');item.trigger.setAttribute('aria-expanded','true');
+  const selected=item.menu.querySelector('[aria-selected="true"]')||item.menu.querySelector('.smooth-select-option');
+  selected?.scrollIntoView({block:'nearest'});
+}
+function moveSmoothFocus(item,key){
+  const options=Array.from(item.menu.querySelectorAll('.smooth-select-option'));
+  if(!options.length)return;
+  let index=options.indexOf(document.activeElement);
+  if(index<0)index=options.findIndex(option=>option.getAttribute('aria-selected')==='true');
+  if(key==='Home')index=0;else if(key==='End')index=options.length-1;
+  else index=(index+(key==='ArrowUp'?-1:1)+options.length)%options.length;
+  options[index].focus();options[index].scrollIntoView({block:'nearest'});
+}
+function syncSmoothSelect(id){
+  const select=$(id);let item=smoothSelects.get(id);
+  if(!item){
+    const wrap=select.parentElement;wrap.classList.add('smooth-select-wrap');
+    select.classList.add('smooth-select-native');select.tabIndex=-1;select.setAttribute('aria-hidden','true');
+    const trigger=document.createElement('button');trigger.type='button';trigger.className='smooth-select-trigger';trigger.setAttribute('role','combobox');trigger.setAttribute('aria-haspopup','listbox');trigger.setAttribute('aria-expanded','false');
+    const label=document.createElement('span');label.className='smooth-select-label';const arrow=document.createElement('span');arrow.className='smooth-select-arrow';arrow.textContent='⌄';trigger.append(label,arrow);wrap.append(trigger);
+    const menu=document.createElement('div');menu.id=`${id}Menu`;menu.className='smooth-select-menu';menu.setAttribute('role','listbox');menu.setAttribute('aria-label',select.getAttribute('aria-label')||'选择选项');document.body.append(menu);
+    trigger.setAttribute('aria-controls',menu.id);
+    item={select,trigger,label,menu};smoothSelects.set(id,item);
+    trigger.addEventListener('click',()=>openSelect(item));
+    trigger.addEventListener('keydown',event=>{if(['ArrowDown','ArrowUp','Home','End'].includes(event.key)){event.preventDefault();if(openSmoothSelect!==item)openSelect(item);moveSmoothFocus(item,event.key);}else if(event.key==='Escape'){closeSmoothSelect();}});
+    menu.addEventListener('keydown',event=>{if(['ArrowDown','ArrowUp','Home','End'].includes(event.key)){event.preventDefault();moveSmoothFocus(item,event.key);}else if(event.key==='Escape'||event.key==='Tab'){closeSmoothSelect(event.key==='Escape');}});
+  }
+  if(openSmoothSelect===item)closeSmoothSelect();
+  item.menu.replaceChildren();
+  const appendOption=option=>{
+    const button=document.createElement('button');button.type='button';button.className='smooth-select-option';button.textContent=option.textContent;button.dataset.value=option.value;button.setAttribute('role','option');button.setAttribute('aria-selected',String(option.value===select.value));button.tabIndex=-1;button.disabled=option.disabled;
+    button.addEventListener('click',()=>{select.value=option.value;closeSmoothSelect();select.dispatchEvent(new Event('change',{bubbles:true}));syncSmoothSelect(id);item.trigger.focus();});
+    item.menu.append(button);
+  };
+  for(const child of select.children){
+    if(child.tagName==='OPTGROUP'){
+      const heading=document.createElement('div');heading.className='smooth-select-group';heading.textContent=child.label;item.menu.append(heading);
+      for(const option of child.children)appendOption(option);
+    }else if(child.tagName==='OPTION')appendOption(child);
+  }
+  const chosen=select.selectedOptions[0];
+  item.label.textContent=chosen?.textContent||'请选择';
+  item.trigger.setAttribute('aria-label',`${select.getAttribute('aria-label')||'选择选项'}：${item.label.textContent}`);
+  item.trigger.disabled=select.disabled||!select.options.length;
+}
+document.addEventListener('click',event=>{if(openSmoothSelect&&!openSmoothSelect.trigger.contains(event.target)&&!openSmoothSelect.menu.contains(event.target))closeSmoothSelect();});
+window.addEventListener('resize',()=>{if(openSmoothSelect)positionSmoothSelect(openSmoothSelect);});
+document.addEventListener('scroll',()=>{if(openSmoothSelect)positionSmoothSelect(openSmoothSelect);},true);
 function renderConnection() {
   const el=$('connectionPill');el.classList.toggle('connected',state.settings.hasKey);el.lastChild.textContent=state.settings.hasKey?` Key 已保存 ···${state.settings.keyTail}`:' 尚未设置 API';
   $('keyStoredNote').textContent=state.settings.hasKey?`已安全保存尾号 ···${state.settings.keyTail}；留空可保持原 Key`:'还未设置 API Key';
@@ -131,6 +229,7 @@ function renderModels() {
   }
   if(!models.some(m=>m.id===state.modelId))state.modelId=models[0].id;
   select.value=state.modelId;
+  syncSmoothSelect('modelSelect');
   const model=currentModel();$('modelName').textContent=model.label;$('modelFamily').textContent=model.family.toUpperCase();
   $('modelDesc').textContent=model.description|| (model.requiredRefs?'此模型必须上传参考图':model.refs?'支持文字与参考图创作':'仅支持文字提示词创作');
   $('referenceHint').textContent=model.requiredRefs?'必填 · 请添加参考图':model.refs?'可选 · 支持多图':'此模型不支持参考图';
@@ -153,6 +252,7 @@ function renderResolutions(){
   const select=$('resolutionSelect');select.replaceChildren();
   for(const resolution of options){const option=document.createElement('option');option.value=resolution;option.textContent=resolution==='default'?'模型默认':resolution;select.append(option);}
   select.value=state.resolutionId;
+  syncSmoothSelect('resolutionSelect');
 }
 function renderRatios() {
   const grid=$('ratioGrid');grid.replaceChildren();
@@ -162,6 +262,7 @@ function renderRatios() {
     grid.append(option);
   }
   grid.value=state.presetId;
+  syncSmoothSelect('ratioGrid');
 }
 function referenceDimensions(){return state.references[0]?{width:state.references[0].width,height:state.references[0].height}:null;}
 async function updateSizeNote() {
@@ -214,6 +315,10 @@ function bindEvents(){document.querySelectorAll('.nav-item').forEach(b=>b.addEve
   $('imagePreviewDialog').addEventListener('close',()=>{$('imagePreview').removeAttribute('src');});
   $('clearHistoryButton').addEventListener('click',async()=>{try{const result=await window.workbench.clearHistory();if(result.cleared){state.history=[];renderHistory();toast(`已清空 ${result.count} 条历史任务`);}}catch(error){toast(error.message);}});
   $('themeToggle').addEventListener('click',()=>setTheme(document.documentElement.dataset.theme==='dark'?'light':'dark'));
+  $('wallpaperToggle').addEventListener('click',()=>{const panel=$('wallpaperPopover');panel.hidden=!panel.hidden;$('wallpaperToggle').setAttribute('aria-expanded',String(!panel.hidden));});
+  $('wallpaperOpacity').addEventListener('input',event=>setWallpaperOpacity(event.target.value));
+  document.addEventListener('click',event=>{if(!event.target.closest('.wallpaper-control')){$('wallpaperPopover').hidden=true;$('wallpaperToggle').setAttribute('aria-expanded','false');}});
+  document.addEventListener('keydown',event=>{if(event.key==='Escape'){$('wallpaperPopover').hidden=true;$('wallpaperToggle').setAttribute('aria-expanded','false');}});
   $('updateButton').addEventListener('click',()=>$('updateDialog').showModal());
   $('closeUpdateDialog').addEventListener('click',()=>$('updateDialog').close());
   $('updateLaterButton').addEventListener('click',()=>$('updateDialog').close());

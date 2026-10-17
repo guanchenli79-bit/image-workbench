@@ -61,14 +61,16 @@ function detectKind(file,data){
   const jpeg=data[0]===0xff&&data[1]===0xd8;
   const png=data.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10]));
   const webp=data.toString('ascii',0,4)==='RIFF'&&data.toString('ascii',8,12)==='WEBP';
+  const gif=['GIF87a','GIF89a'].includes(data.toString('ascii',0,6));
   const mp4=data.toString('ascii',4,8)==='ftyp';
   const webm=data.subarray(0,4).equals(Buffer.from([0x1a,0x45,0xdf,0xa3]))&&data.includes(Buffer.from('webm'));
   if(ext==='.jpg'||ext==='.jpeg'){if(jpeg)return {kind:'image',ext:'jpg'};}
   if(ext==='.png'&&png)return {kind:'image',ext:'png'};
   if(ext==='.webp'&&webp)return {kind:'image',ext:'webp'};
+  if(ext==='.gif'&&gif)return {kind:'image',ext:'gif'};
   if(ext==='.mp4'&&mp4)return {kind:'video',ext:'mp4'};
   if(ext==='.webm'&&webm)return {kind:'video',ext:'webm'};
-  throw new Error('仅支持有效的 JPG、PNG、WEBP、MP4 或 WEBM 文件');
+  throw new Error('仅支持有效的 JPG、PNG、WEBP、GIF、MP4 或 WEBM 文件');
 }
 async function addWallpaper(file,name){
   const stat=await fs.stat(file);

@@ -17,6 +17,7 @@
     "src/admin-ui/**/*",
     "assets/logo.ico",
     "assets/logo.svg",
+    "assets/activation-poster.jpg",
     "package.json"
   ],
   "asar": true,

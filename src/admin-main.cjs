@@ -45,7 +45,7 @@ app.whenReady().then(()=>{
   ipcMain.handle('admin:wallpapers',async event=>{authorized(event);return (await readManifest()).manifest;});
   ipcMain.handle('admin:wallpaper-add',async event=>{
     authorized(event);
-    const picked=await dialog.showOpenDialog(window,{title:'添加首页壁纸',properties:['openFile'],filters:[{name:'图片或视频',extensions:['jpg','jpeg','png','webp','mp4','webm']}]});
+    const picked=await dialog.showOpenDialog(window,{title:'添加页面主题',properties:['openFile'],filters:[{name:'动态图片、静态图片或视频',extensions:['jpg','jpeg','png','webp','gif','mp4','webm']}]});
     if(picked.canceled)return null;
     vault.requireUnlocked();
     return addWallpaper(picked.filePaths[0],path.parse(picked.filePaths[0]).name);

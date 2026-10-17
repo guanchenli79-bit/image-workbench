@@ -102,13 +102,13 @@ function showWallpapers(manifest){
     const preview=document.createElement('div');preview.className='wallpaper-preview';
     if(item.kind==='image'){const img=document.createElement('img');img.src=wallpaperUrl(item);img.alt=item.name;preview.append(img);}
     else if(item.kind==='video'){const video=document.createElement('video');video.src=wallpaperUrl(item);video.muted=true;video.loop=true;video.autoplay=true;video.playsInline=true;preview.append(video);}
-    else preview.textContent='✦';
+    else{const img=document.createElement('img');img.src='../../assets/activation-poster.jpg';img.alt='内置动态壁纸预览';preview.append(img);}
     const content=document.createElement('div');content.className='wallpaper-copy';
     const name=document.createElement('strong');name.textContent=item.name;
-    const meta=document.createElement('small');meta.textContent=item.id===manifest.activeId?'当前所有用户使用':item.kind==='bundled'?'内置动态壁纸':item.kind==='video'?'动态视频壁纸':'静态图片壁纸';
+    const meta=document.createElement('small');meta.textContent=item.id===manifest.activeId?'当前所有用户使用':item.kind==='bundled'?'内置动态壁纸':item.kind==='video'?'动态视频壁纸':item.path?.endsWith('.gif')?'GIF 动态图片':'图片壁纸';
     const actions=document.createElement('div');actions.className='wallpaper-actions';
     const select=document.createElement('button');select.type='button';select.textContent=item.id===manifest.activeId?'当前壁纸':'设为当前';select.disabled=item.id===manifest.activeId;
-    select.addEventListener('click',async()=>{const updated=await act(select,()=>window.licenseAdmin.selectWallpaper(item.id),'已发布壁纸切换，用户端将自动同步');if(updated)showWallpapers(updated);});
+    select.addEventListener('click',async()=>{const updated=await act(select,()=>window.licenseAdmin.selectWallpaper(item.id),'页面主题已切换，用户端登录页和工作台将自动同步');if(updated)showWallpapers(updated);});
     actions.append(select);
     if(item.id!=='original'){
       const remove=document.createElement('button');remove.type='button';remove.className='danger';remove.textContent='删除';
