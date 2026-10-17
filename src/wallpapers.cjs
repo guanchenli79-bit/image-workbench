@@ -22,7 +22,7 @@ function validateManifest(value){
     ids.add(item.id);
     if(item.id==='original'){
       if(item.kind!=='bundled')throw new Error('默认壁纸记录格式不正确');
-    }else if(!['image','video'].includes(item.kind)||!/^wallpapers\/assets\/[a-z0-9-]+\.(?:jpg|png|webp|mp4|webm)$/.test(item.path||'')||
+    }else if(!['image','video'].includes(item.kind)||!/^wallpapers\/assets\/[a-z0-9-]+\.(?:jpg|png|webp|gif|mp4|webm)$/.test(item.path||'')||
       ![undefined,'release'].includes(item.storage)||
       (item.storage==='release'&&item.kind!=='video')||
       !/^[0-9a-f]{64}$/.test(item.sha256||'')||!Number.isInteger(item.size)||item.size<100||

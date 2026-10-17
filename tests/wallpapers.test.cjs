@@ -27,6 +27,14 @@ test('动态录制文件和大视频素材使用受限的远程路径',()=>{
   assert.throws(()=>validateManifest({version:1,activeId:item.id,items:[defaultManifest().items[0],{...item,storage:'other'}]}),/壁纸文件/);
 });
 
+test('动态 GIF 可上传并作为远程页面主题',()=>{
+  const data=Buffer.concat([Buffer.from('GIF89a','ascii'),Buffer.alloc(128)]);
+  assert.deepEqual(detectKind('motion.gif',data),{kind:'image',ext:'gif'});
+  assert.throws(()=>detectKind('motion.gif',Buffer.from('not a gif')),/仅支持有效/);
+  const item={id:'wall-gif',name:'动态图片',kind:'image',path:'wallpapers/assets/wall-gif.gif',sha256:sha256(data),size:data.length};
+  assert.equal(validateManifest({version:1,activeId:item.id,items:[defaultManifest().items[0],item]}).activeId,item.id);
+});
+
 test('用户端读取当前壁纸并校验下载文件，缓存可离线使用',async()=>{
   const bytes=Buffer.from([255,216,255,...new Array(120).fill(1)]);
   const item={id:'wall-test',name:'测试壁纸',kind:'image',path:'wallpapers/assets/wall-test.jpg',sha256:sha256(bytes),size:bytes.length};

@@ -1,8 +1,8 @@
 {
   "name": "image-workbench",
-  "version": "0.1.14",
+  "version": "0.1.15",
   "private": true,
-  "description": "????????????",
+  "description": "画境图像与视频创作工作台",
   "main": "src/main.cjs",
   "scripts": {
     "start": "electron .",
@@ -23,7 +23,7 @@
   },
   "build": {
     "appId": "ai.geeknow.imageworkbench",
-    "productName": "?????",
+    "productName": "画境工作台",
     "artifactName": "ImageWorkbench-${version}-${arch}.${ext}",
     "directories": {
       "output": "release"
@@ -54,7 +54,7 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "shortcutName": "?????"
+      "shortcutName": "画境工作台"
     },
     "publish": [
       {
