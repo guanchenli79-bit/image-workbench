@@ -1,1 +1,11 @@
-{"version":1,"entries":[]}
+{
+  "version": 1,
+  "entries": [
+    {
+      "machineHash": "4ab884eea1f79236ae925b7440528e3eb5b81c3182f56d853df1353af37c1d52",
+      "keyHash": "477b5463da2f173dd87c982929e3864517b98d9db87488cd3707cc2e93a95160",
+      "issuedAt": "2026-10-17T01:58:04.862Z",
+      "expiresAt": "2030-01-01T15:59:59.000Z"
+    }
+  ]
+}
