@@ -14,14 +14,6 @@
       "path": "wallpapers/assets/wall-e26ded43-e95c-4185-912b-2321c06ff3eb.jpg",
       "sha256": "67905ef55dcd302f0b75c68899f07465fe1933af996f3179f33cd35384503524",
       "size": 183457
-    },
-    {
-      "id": "wall-24be1da0-3443-4808-a8fb-2036869301a9",
-      "name": "video (5)",
-      "kind": "video",
-      "path": "wallpapers/assets/wall-24be1da0-3443-4808-a8fb-2036869301a9.mp4",
-      "sha256": "19a5d48a0cb76e250255cf0e74170274455ede106583d7d23a84f856068b0a36",
-      "size": 17182667
     }
   ]
 }
