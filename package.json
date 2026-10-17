@@ -1,8 +1,8 @@
 {
   "name": "image-workbench",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "private": true,
-  "description": "Geeknow 图像与视频创作工作台",
+  "description": "画境图像与视频创作工作台",
   "main": "src/main.cjs",
   "scripts": {
     "start": "electron .",
@@ -18,7 +18,8 @@
   },
   "devDependencies": {
     "electron": "44.7.2",
-    "electron-builder": "26.15.3"
+    "electron-builder": "26.15.3",
+    "wrangler": "^4.151.1"
   },
   "build": {
     "appId": "ai.geeknow.imageworkbench",

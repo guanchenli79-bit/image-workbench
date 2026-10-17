@@ -1,15 +1,36 @@
-const {app,BrowserWindow,ipcMain,dialog,clipboard,desktopCapturer,session} = require('electron');
+const {app,BrowserWindow,ipcMain,dialog,clipboard,desktopCapturer,session,safeStorage} = require('electron');
 const path = require('node:path');
 const fsp = require('node:fs/promises');
-const {currentMachineCode} = require('./license.cjs');
-const {listLicenses,issueLicense,unbindLicense,renameLicense,rebindLicense,deleteBinding} = require('./admin-license.cjs');
+const {adminList,adminAction}=require('./approval.cjs');
 const {readManifest,addWallpaper,addRecordedWallpaper,selectWallpaper,removeWallpaper}=require('./admin-wallpapers.cjs');
 const {AdminVault} = require('./admin-vault.cjs');
 
 let window;
+// Keep the original app name so existing encrypted administrator records survive upgrades.
 app.setName('画境卡密管理');
 app.whenReady().then(()=>{
   const vault=new AdminVault(path.join(app.getPath('userData'),'admin-vault.json'));
+  const tokenFile=path.join(app.getPath('userData'),'approval-admin-token.json');
+  const bootstrapFile=path.join(app.getPath('userData'),'approval-admin-token.txt');
+  let tokenPromise;
+  async function loadAdminToken(){
+    if(!safeStorage.isEncryptionAvailable())throw new Error('系统安全存储不可用');
+    try{return safeStorage.decryptString(Buffer.from(JSON.parse(await fsp.readFile(tokenFile,'utf8')).data,'base64'));}
+    catch{
+      let token;
+      try{token=(await fsp.readFile(bootstrapFile,'utf8')).trim();}
+      catch{throw new Error('审批服务管理员令牌未配置，请联系开发者');}
+      if(!/^[A-Za-z0-9_-]{43}$/.test(token))throw new Error('审批服务管理员令牌未配置');
+      await fsp.writeFile(tokenFile,JSON.stringify({data:safeStorage.encryptString(token).toString('base64')}),{flag:'wx'});
+      await fsp.rm(bootstrapFile,{force:true});
+      return token;
+    }
+  }
+  function adminToken(){
+    if(!tokenPromise)tokenPromise=loadAdminToken().catch(error=>{tokenPromise=null;throw error;});
+    return tokenPromise;
+  }
+  adminToken().catch(()=>{});
   const authorized=(event)=>{
     if(!window || event.sender!==window.webContents)throw new Error('无效的管理窗口');
     vault.requireUnlocked();
@@ -27,33 +48,19 @@ app.whenReady().then(()=>{
   ipcMain.handle('admin:setup',(event,input)=>{if(event.sender!==window?.webContents)throw new Error('无效的管理窗口');return vault.setup(input?.password,input?.confirmation);});
   ipcMain.handle('admin:unlock',(event,password)=>{if(event.sender!==window?.webContents)throw new Error('无效的管理窗口');return vault.unlock(password);});
   ipcMain.handle('admin:lock',event=>{authorized(event);vault.lock();return vault.status();});
-  ipcMain.handle('admin:list',event=>{authorized(event);return listLicenses(vault);});
-  ipcMain.handle('admin:history',event=>{authorized(event);return vault.snapshot().history;});
-  ipcMain.handle('admin:bindings-local',event=>{authorized(event);return vault.snapshot().bindings;});
-  ipcMain.handle('admin:own-machine',event=>{authorized(event);return currentMachineCode();});
-  ipcMain.handle('admin:issue',(event,input)=>{authorized(event);return issueLicense(input?.machineCode,input?.date,input?.name,vault);});
-  ipcMain.handle('admin:rename',(event,input)=>{authorized(event);return renameLicense(input?.machineHash,input?.name,vault);});
-  ipcMain.handle('admin:unbind',async(event,machineHash)=>{
+  ipcMain.handle('admin:applications',async(event,input)=>{authorized(event);return adminList(await adminToken(),input?.offset||0,input?.limit||200);});
+  ipcMain.handle('admin:application-action',async(event,input)=>{
     authorized(event);
-    const {response}=await dialog.showMessageBox(window,{type:'warning',title:'解绑这台机器？',message:'解绑后，这台机器的当前卡密会在下次联网复核时失效。',detail:'离线期间可能继续使用到本地授权到期。解绑后可以重新签发。',buttons:['取消','确认解绑'],defaultId:0,cancelId:0,noLink:true});
-    if(response!==1)return null;
+    if(!/^[0-9a-f-]{36}$/.test(input?.id||''))throw new Error('申请编号无效');
+    if(!['approve','reject','unbind','rebind','expiry','rename','delete'].includes(input?.action))throw new Error('操作无效');
+    if(['unbind','rebind','delete'].includes(input.action)){
+      const {response}=await dialog.showMessageBox(window,{type:'warning',message:input.action==='delete'?'永久删除这条申请记录？':input.action==='rebind'?'将绑定转移到新机器？':'解除当前机器绑定？',buttons:['取消','确认'],defaultId:0,cancelId:0});
+      if(response!==1)return null;
+    }
     vault.requireUnlocked();
-    return unbindLicense(machineHash,vault);
+    return adminAction(await adminToken(),input.id,input.action,input.data||{});
   });
-  ipcMain.handle('admin:rebind',async(event,input)=>{
-    authorized(event);
-    const {response}=await dialog.showMessageBox(window,{type:'warning',title:'更换绑定机器？',message:'这张卡密将改绑到新的机器码。',detail:'原机器在下次联网复核时失效；离线期间可能继续使用到本地授权到期。',buttons:['取消','确认换绑'],defaultId:0,cancelId:0,noLink:true});
-    if(response!==1)return null;
-    vault.requireUnlocked();
-    return rebindLicense(input?.key,input?.machineCode,vault);
-  });
-  ipcMain.handle('admin:binding-delete',async(event,key)=>{
-    authorized(event);
-    const {response}=await dialog.showMessageBox(window,{type:'warning',title:'永久删除绑定记录？',message:'将删除本机保存的机器码与卡密记录。',detail:'如果卡密仍有效，也会从在线授权库解绑。删除后明文卡密无法恢复。',buttons:['取消','永久删除'],defaultId:0,cancelId:0,noLink:true});
-    if(response!==1)return null;
-    vault.requireUnlocked();
-    return deleteBinding(key,vault);
-  });
+  ipcMain.handle('admin:legacy-history',event=>{authorized(event);return vault.snapshot().bindings;});
   ipcMain.handle('admin:wallpapers',async event=>{authorized(event);return (await readManifest()).manifest;});
   ipcMain.handle('admin:wallpaper-add',async event=>{
     authorized(event);
@@ -98,7 +105,7 @@ app.whenReady().then(()=>{
     return removeWallpaper(id);
   });
   ipcMain.handle('admin:copy',(event,value)=>{authorized(event);clipboard.writeText(String(value||''));return true;});
-  window=new BrowserWindow({width:1100,height:820,minWidth:850,minHeight:650,backgroundColor:'#eef2f8',title:'画境 · 卡密管理',icon:path.join(__dirname,'..','assets','logo.ico'),autoHideMenuBar:true,
+  window=new BrowserWindow({width:1100,height:820,minWidth:850,minHeight:650,backgroundColor:'#eef2f8',title:'画境 · 使用审批管理',icon:path.join(__dirname,'..','assets','logo.ico'),autoHideMenuBar:true,
     webPreferences:{preload:path.join(__dirname,'admin-preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true,backgroundThrottling:false}});
   window.webContents.on('will-navigate',event=>event.preventDefault());
   window.loadFile(path.join(__dirname,'admin-ui','index.html'));

@@ -16,18 +16,20 @@
     <div class="activation-vignette"></div>
     <div class="activation-brand"><img src="../../assets/logo.svg" alt=""><span>画境 <small>IMAGE WORKBENCH</small></span></div>
     <div class="activation-card">
-      <span class="activation-eyebrow"><i></i> DEVICE ACTIVATION</span>
+      <span class="activation-eyebrow"><i></i> DEVICE ACCESS</span>
       <h1 id="activationTitle">开启你的创作空间</h1>
-      <p class="activation-intro">将机器码发给管理员，获取仅适用于这台电脑的卡密。首次激活需要联网。</p>
+      <p class="activation-intro">填写姓名和手机号提交申请。管理员批准后，这台电脑会自动进入工作台；更新软件不会解除绑定。</p>
       <label for="machineCodeValue">当前机器码</label>
       <div class="activation-machine"><code id="machineCodeValue">正在读取…</code><button type="button" id="copyMachineCode" aria-label="复制机器码">复制</button></div>
       <form id="activationForm">
-        <label for="licenseKeyInput">激活卡密</label>
-        <input id="licenseKeyInput" type="text" autocomplete="off" spellcheck="false" maxlength="19" placeholder="DP-XXXX-XXXX-XXXX" aria-describedby="activationMessage" required>
-        <button class="activation-submit" id="activationSubmit" type="submit">激活工作台 <span>↗</span></button>
+        <label for="applicantName">姓名</label>
+        <input id="applicantName" type="text" autocomplete="name" maxlength="40" placeholder="请输入姓名" required>
+        <label for="applicantPhone">手机号</label>
+        <input id="applicantPhone" type="tel" inputmode="numeric" autocomplete="tel" pattern="[0-9]{11}" maxlength="11" placeholder="请输入 11 位手机号" aria-describedby="activationMessage" required>
+        <button class="activation-submit" id="activationSubmit" type="submit">提交使用申请 <span>↗</span></button>
       </form>
       <p id="activationMessage" class="activation-message" role="status" aria-live="polite">正在准备机器码…</p>
-      <div class="activation-foot"><span>一个卡密 · 一台机器</span><span id="activationVersion">画境工作台</span></div>
+      <div class="activation-foot"><span>一人一机 · 管理员审批</span><span id="activationVersion">画境工作台</span></div>
     </div>
   </section>
   <div class="app-shell" hidden>

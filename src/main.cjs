@@ -14,6 +14,7 @@ const { releaseNotesText } = require('./update-notes.cjs');
 const { prepareReference, MAX_REFERENCES } = require('./references.cjs');
 const { currentMachineCode, normalizeLicenseKey, hashCode, findLicense, fetchRegistry } = require('./license.cjs');
 const {fetchManifest,downloadWallpaper,sha256}=require('./wallpapers.cjs');
+const {loadIdentity,submitApplication,getApplication}=require('./approval.cjs');
 
 protocol.registerSchemesAsPrivileged([
   {scheme:'workbench-media',privileges:{secure:true,standard:true,supportFetchAPI:true,stream:true}},
@@ -41,6 +42,10 @@ let licenseMachineError = '';
 let licenseRecord = null;
 let licenseRefreshInFlight = false;
 let licenseReason = '';
+let deviceIdentity = null;
+let approvalStatus = {status:'none'};
+let approvalReason = '';
+let approvalCheckedAt = 0;
 let currentWallpaper={id:'original',kind:'bundled'};
 let wallpaperSyncing=false;
 
@@ -135,6 +140,7 @@ async function loadState() {
   await fsp.mkdir(p.media,{recursive:true});
   await loadCachedWallpaper();
   try { licenseMachineCode=await currentMachineCode(); } catch(error) { licenseMachineError=error.message; }
+  try { deviceIdentity=await loadIdentity(app,safeStorage); } catch(error) { approvalReason=error.message; }
   try {
     const stored=JSON.parse(await fsp.readFile(p.license,'utf8'));
     const decoded=decrypted(stored.data);
@@ -159,12 +165,27 @@ async function loadState() {
   try { records=JSON.parse(await fsp.readFile(p.history,'utf8')); if(!Array.isArray(records))records=[]; } catch { records=[]; }
   if(recoverSubmittedMidjourney(records))await persistRecords();
   await pruneExpired();
+  await refreshApproval();
+}
+async function refreshApproval(){
+  if(!deviceIdentity||!licenseMachineCode)return;
+  try{
+    approvalStatus=await getApplication(deviceIdentity,licenseMachineCode);
+    approvalCheckedAt=Date.now();
+    approvalReason='';
+    emit('license:status',licenseStatus());
+  }catch(error){approvalReason=`审批服务暂不可用：${error.message}`;emit('license:status',licenseStatus());}
 }
 function licenseStatus() {
   const now=Date.now();
+  if(approvalStatus.status!=='none'){
+    const active=approvalStatus.status==='approved'&&Date.parse(approvalStatus.expiresAt)>now&&now-approvalCheckedAt<5*60*1000;
+    const labels={pending:'申请已提交，等待管理员审批',rejected:`申请已驳回${approvalStatus.reason?`：${approvalStatus.reason}`:''}，可重新提交`,unbound:'设备已解绑，可重新提交申请',expired:'绑定已到期，请重新提交申请'};
+    return {active,machineCode:licenseMachineCode||'',expiresAt:active?approvalStatus.expiresAt:null,status:approvalStatus.status,name:approvalStatus.name||'',message:active?'已通过审批':approvalReason||labels[approvalStatus.status]||'请提交使用申请'};
+  }
   const valid=!!licenseMachineCode && !!licenseRecord && Date.parse(licenseRecord.expiresAt)>now && now+5*60*1000>=Number(licenseRecord.lastSeenAt||0);
   return {active:valid,machineCode:licenseMachineCode||'',expiresAt:valid?licenseRecord.expiresAt:null,
-    message:licenseMachineError || licenseReason || (licenseRecord&&!valid?'授权已到期或系统时间异常，请联系管理员续期':'请输入管理员提供的卡密')};
+    status:valid?'legacy':'none',message:licenseMachineError || approvalReason || licenseReason || (licenseRecord&&!valid?'旧版授权已到期，请提交使用申请':'填写姓名和手机号，向管理员提交使用申请')};
 }
 function requireLicense() {
   if(!licenseStatus().active){emit('license:status',licenseStatus());throw new Error(licenseStatus().message);}
@@ -361,7 +382,14 @@ function registerIpc() {
   ipcMain.handle('app:init',async()=>licenseStatus().active?
     {license:licenseStatus(),wallpaper:wallpaperDescriptor(),...modelSnapshot(),presets,history:listHistory(),version:app.getVersion(),isPackaged:app.isPackaged}:
     {license:licenseStatus(),wallpaper:wallpaperDescriptor(),version:app.getVersion(),isPackaged:app.isPackaged});
-  ipcMain.handle('license:activate',async(_,key)=>activateLicense(key));
+  ipcMain.handle('approval:submit',async(_,input)=>{
+    if(!deviceIdentity||!licenseMachineCode)throw new Error(approvalReason||licenseMachineError||'设备身份不可用');
+    approvalStatus=await submitApplication(deviceIdentity,licenseMachineCode,String(input?.name||'').trim(),String(input?.phone||'').trim());
+    approvalCheckedAt=Date.now();
+    emit('license:status',licenseStatus());
+    return licenseStatus();
+  });
+  ipcMain.handle('approval:refresh',async()=>{await refreshApproval();return licenseStatus();});
   ipcMain.handle('license:copy-machine',()=>{if(!licenseMachineCode)throw new Error(licenseMachineError||'机器码不可用');clipboard.writeText(licenseMachineCode);return true;});
   ipcMain.handle('settings:save',async(_,input)=>{
     requireLicense();
@@ -474,6 +502,7 @@ app.whenReady().then(async()=>{
   },700);
   setInterval(pruneExpired,60*1000);setInterval(pollTasks,15*1000);setTimeout(pollTasks,2000);
   setTimeout(refreshLicense,3000);setInterval(refreshLicense,30*60*1000);
+  setInterval(refreshApproval,30*1000);
   if(app.isPackaged){
     autoUpdater.autoDownload=false;autoUpdater.autoInstallOnAppQuit=false;
     autoUpdater.fullChangelog=true;
