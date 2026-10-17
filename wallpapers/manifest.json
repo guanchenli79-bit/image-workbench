@@ -6,6 +6,14 @@
       "id": "original",
       "name": "默认动态壁纸",
       "kind": "bundled"
+    },
+    {
+      "id": "wall-e26ded43-e95c-4185-912b-2321c06ff3eb",
+      "name": "preview",
+      "kind": "image",
+      "path": "wallpapers/assets/wall-e26ded43-e95c-4185-912b-2321c06ff3eb.jpg",
+      "sha256": "67905ef55dcd302f0b75c68899f07465fe1933af996f3179f33cd35384503524",
+      "size": 183457
     }
   ]
 }
