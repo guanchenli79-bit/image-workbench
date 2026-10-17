@@ -8,6 +8,7 @@
     "src/admin-main.cjs",
     "src/admin-preload.cjs",
     "src/admin-license.cjs",
+    "src/admin-vault.cjs",
     "src/license.cjs",
     "src/network.cjs",
     "src/admin-ui/**/*",

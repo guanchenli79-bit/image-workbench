@@ -29,8 +29,21 @@ async function writeRegistry(registry,sha,message) {
   return gh(['api','-X','PUT',route,'-f',`message=${message}`,'-f',`content=${content}`,'-f',`sha=${sha}`,'-f',`branch=${REGISTRY_BRANCH}`]);
 }
 
-function publicEntries(registry) {
-  return validateRegistry(registry).entries.map(entry=>({machineHash:entry.machineHash,issuedAt:entry.issuedAt,expiresAt:entry.expiresAt}));
+function publicEntries(registry,vault) {
+  const notes=vault.snapshot().notes;
+  return validateRegistry(registry).entries.map(entry=>({machineHash:entry.machineHash,issuedAt:entry.issuedAt,expiresAt:entry.expiresAt,name:notes[entry.machineHash]||''}));
+}
+
+function localHistory(vault,registry) {
+  const active=new Map(validateRegistry(registry).entries.map(entry=>[entry.machineHash,entry.keyHash]));
+  return vault.snapshot().history.map(item=>({
+    ...item,
+    status:active.get(item.machineHash)===hashCode('license',item.key) ? (Date.parse(item.expiresAt)>Date.now()?'有效':'已到期') : '已失效'
+  }));
+}
+
+function view(registry,vault) {
+  return {entries:publicEntries(registry,vault),history:localHistory(vault,registry)};
 }
 
 function issueInRegistry(registry,machineCode,date,key = createLicenseKey(),now = new Date()) {
@@ -50,25 +63,55 @@ function unbindInRegistry(registry,machineHash) {
   return {version:1,entries};
 }
 
-async function listLicenses() {
+async function listLicenses(vault) {
   const {registry} = await readRegistry();
-  return publicEntries(registry);
+  return view(registry,vault);
 }
 
-async function issueLicense(machineCode,date) {
+async function issueLicense(machineCode,date,name,vault) {
+  vault.requireUnlocked();
+  const normalizedName=normalizeName(name);
   const {sha,registry} = await readRegistry();
   let issued;
   do { issued=issueInRegistry(registry,machineCode,date); }
   while(registry.entries.some(entry=>entry.keyHash===hashCode('license',issued.key)));
   await writeRegistry(issued.registry,sha,`Issue license for ${issued.machineCode}`);
-  return {key:issued.key,machineCode:issued.machineCode,expiresAt:issued.expiresAt,entries:publicEntries(issued.registry)};
+  let warning='';
+  try {
+    vault.update(data=>{
+      const machineHash=hashCode('machine',issued.machineCode);
+      const finalName=normalizedName || data.notes[machineHash] || '';
+      if(finalName)data.notes[machineHash]=finalName;
+      data.history.unshift({key:issued.key,machineCode:issued.machineCode,machineHash,name:finalName,issuedAt:issued.registry.entries[0].issuedAt,expiresAt:issued.expiresAt});
+    });
+  } catch(error) { warning=`卡密已同步到授权库，但本地历史保存失败：${error.message}。请现在复制卡密。`; }
+  return {key:issued.key,machineCode:issued.machineCode,expiresAt:issued.expiresAt,...view(issued.registry,vault),warning};
 }
 
-async function unbindLicense(machineHash) {
+async function unbindLicense(machineHash,vault) {
+  vault.requireUnlocked();
   const {sha,registry} = await readRegistry();
   const updated = unbindInRegistry(registry,machineHash);
   await writeRegistry(updated,sha,`Unbind license ${machineHash.slice(0,12)}`);
-  return publicEntries(updated);
+  return view(updated,vault);
 }
 
-module.exports = { readRegistry, listLicenses, issueLicense, unbindLicense, issueInRegistry, unbindInRegistry };
+function normalizeName(value) {
+  const name=String(value||'').trim();
+  if(name.length>40 || /[\r\n\u0000-\u001f]/.test(name)) throw new Error('备注名称最多 40 个字符，不能包含换行');
+  return name;
+}
+
+function renameLicense(machineHash,name,vault) {
+  vault.requireUnlocked();
+  if(!/^[0-9a-f]{64}$/.test(String(machineHash))) throw new Error('机器记录无效');
+  const normalizedName=normalizeName(name);
+  vault.update(data=>{
+    if(normalizedName)data.notes[machineHash]=normalizedName;
+    else delete data.notes[machineHash];
+    for(const item of data.history)if(item.machineHash===machineHash)item.name=normalizedName;
+  });
+  return normalizedName;
+}
+
+module.exports = { readRegistry, listLicenses, issueLicense, unbindLicense, renameLicense, issueInRegistry, unbindInRegistry, normalizeName, view };
