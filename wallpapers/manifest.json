@@ -6,14 +6,6 @@
       "id": "original",
       "name": "默认动态壁纸",
       "kind": "bundled"
-    },
-    {
-      "id": "wall-c4167082-764a-4936-ae9c-3ab54924caef",
-      "name": "橘子洲头-毛主席雕像 · 静态预览",
-      "kind": "image",
-      "path": "wallpapers/assets/wall-c4167082-764a-4936-ae9c-3ab54924caef.jpg",
-      "sha256": "8914b651b2fd407b34f2c7c7d8cac0ed82d85fd44eb894d022e5138cfc40c83f",
-      "size": 558442
     }
   ]
 }
