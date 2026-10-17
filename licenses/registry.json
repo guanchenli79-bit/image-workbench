@@ -2,6 +2,12 @@
   "version": 1,
   "entries": [
     {
+      "machineHash": "11738b8513d3d3396fc578f593ed5752b02a2e24529747844855f70cef99f6eb",
+      "keyHash": "6d3148561da18642598ac6b753e539712e8d931812fc00fa3e10cfdf7c6137fb",
+      "issuedAt": "2026-10-17T07:18:54.309Z",
+      "expiresAt": "2027-01-16T15:59:59.000Z"
+    },
+    {
       "machineHash": "2323532a6311af4fc7961076a2fc7db417b0f2e3d3316e6e8a73ac2a9a3584c6",
       "keyHash": "370dbc936ac8b6306bd073fd6948872e81f6b2762bf24f2cc326b8b07d8760a8",
       "issuedAt": "2026-10-17T07:18:35.779Z",
@@ -23,12 +29,6 @@
       "machineHash": "418e59078be97a9eb3db1b85853d58ecd5c7f8e9cd03cf3e9bc96eed27e99d63",
       "keyHash": "2871d406dfb43bec951f9e8e4d7357b1cf3dc1252a0428b97fc8b908df46717b",
       "issuedAt": "2026-10-17T07:12:51.883Z",
-      "expiresAt": "2027-01-16T15:59:59.000Z"
-    },
-    {
-      "machineHash": "11738b8513d3d3396fc578f593ed5752b02a2e24529747844855f70cef99f6eb",
-      "keyHash": "79433c8e82fdab7c55213625d085979fb1ec89ebc012d06cb1f747c92562d885",
-      "issuedAt": "2026-10-17T07:08:48.521Z",
       "expiresAt": "2027-01-16T15:59:59.000Z"
     },
     {
