@@ -4,6 +4,7 @@ const fs=require('node:fs');
 const os=require('node:os');
 const path=require('node:path');
 const {AdminVault}=require('../src/admin-vault.cjs');
+const {adminApprovalToken}=require('../src/admin-approval-token.cjs');
 const {machineCodeFromGuid,hashCode}=require('../src/license.cjs');
 const {issueInRegistry,unbindInRegistry,rebindInRegistry,normalizeName,view}=require('../src/admin-license.cjs');
 
@@ -48,5 +49,23 @@ test('管理员密码保护本机备注和生成历史',()=>{
     const recovered=new AdminVault(file);recovered.unlock('strong password');
     assert.equal(recovered.snapshot().bindings[0].key,issued.key);
     assert.throws(()=>normalizeName('a'.repeat(41)),/40/);
+  }finally{fs.rmSync(dir,{recursive:true,force:true});}
+});
+
+test('审批管理员令牌迁入密码加密管理库后移除明文文件',()=>{
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'admin-approval-test-'));
+  try{
+    const token='A'.repeat(43);
+    const vault=new AdminVault(path.join(dir,'admin-vault.json'));
+    vault.setup('strong password','strong password');
+    fs.writeFileSync(path.join(dir,'approval-admin-token.txt'),token);
+    assert.equal(adminApprovalToken(vault,dir),token);
+    assert.equal(fs.existsSync(path.join(dir,'approval-admin-token.txt')),false);
+    assert.equal(fs.readFileSync(vault.file,'utf8').includes(token),false);
+    vault.lock();
+    assert.throws(()=>adminApprovalToken(vault,dir),/密码/);
+    const reopened=new AdminVault(vault.file);
+    reopened.unlock('strong password');
+    assert.equal(adminApprovalToken(reopened,dir),token);
   }finally{fs.rmSync(dir,{recursive:true,force:true});}
 });

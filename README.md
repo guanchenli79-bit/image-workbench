@@ -28,6 +28,6 @@ npm run dist:win
 npm run dist:admin
 ```
 
-用户安装包输出到 `release/`，管理端安装包输出到 `release-admin/`。管理端必须留在管理机，Cloudflare 管理令牌仅保存在这台管理机的用户数据目录，不进入仓库或安装包。`approval-service/` 包含 Worker 和 D1 schema；部署需登录有权限的 Cloudflare 账号。
+用户安装包输出到 `release/`，管理端安装包输出到 `release-admin/`。管理端必须留在管理机。首次用管理员密码进入新版管理端时，Cloudflare 管理令牌会迁入本机密码加密管理库，随后删除临时明文文件；令牌不进入仓库或安装包。`approval-service/` 包含 Worker 和 D1 schema；部署需登录有权限的 Cloudflare 账号。
 
 详细操作见 [使用说明.txt](使用说明.txt)。
