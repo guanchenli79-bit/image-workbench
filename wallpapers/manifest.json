@@ -14,6 +14,14 @@
       "path": "wallpapers/assets/wall-809bf7c2-e036-4658-9a22-c687db0ce6f8.jpg",
       "sha256": "0bc7261237c6acfadb3346ae83c91a2fb0f73c27853d179e581853b7e18cbad2",
       "size": 802772
+    },
+    {
+      "id": "wall-c4167082-764a-4936-ae9c-3ab54924caef",
+      "name": "橘子洲头-毛主席雕像 · 静态预览",
+      "kind": "image",
+      "path": "wallpapers/assets/wall-c4167082-764a-4936-ae9c-3ab54924caef.jpg",
+      "sha256": "8914b651b2fd407b34f2c7c7d8cac0ed82d85fd44eb894d022e5138cfc40c83f",
+      "size": 558442
     }
   ]
 }
