@@ -1,11 +1,4 @@
 {
   "version": 1,
-  "entries": [
-    {
-      "machineHash": "39ba5b3c36bbbe8e6e9e970c5a6ce9f5b3806bdc19142483d5c09692dc8534ef",
-      "keyHash": "f07698bba7bb340f5e5c21d817ffb371ad67b765468fd6a32f8b56a51997c99e",
-      "issuedAt": "2026-10-17T02:00:39.999Z",
-      "expiresAt": "2030-01-01T15:59:59.000Z"
-    }
-  ]
+  "entries": []
 }
