@@ -1,36 +1,17 @@
-const {app,BrowserWindow,ipcMain,dialog,clipboard,desktopCapturer,session,safeStorage} = require('electron');
+const {app,BrowserWindow,ipcMain,dialog,clipboard,desktopCapturer,session} = require('electron');
 const path = require('node:path');
 const fsp = require('node:fs/promises');
 const {adminList,adminAction}=require('./approval.cjs');
 const {readManifest,addWallpaper,addRecordedWallpaper,selectWallpaper,removeWallpaper}=require('./admin-wallpapers.cjs');
 const {AdminVault} = require('./admin-vault.cjs');
+const {adminApprovalToken}=require('./admin-approval-token.cjs');
 
 let window;
 // Keep the original app name so existing encrypted administrator records survive upgrades.
 app.setName('??????');
 app.whenReady().then(()=>{
   const vault=new AdminVault(path.join(app.getPath('userData'),'admin-vault.json'));
-  const tokenFile=path.join(app.getPath('userData'),'approval-admin-token.json');
-  const bootstrapFile=path.join(app.getPath('userData'),'approval-admin-token.txt');
-  let tokenPromise;
-  async function loadAdminToken(){
-    if(!safeStorage.isEncryptionAvailable())throw new Error('?????????');
-    try{return safeStorage.decryptString(Buffer.from(JSON.parse(await fsp.readFile(tokenFile,'utf8')).data,'base64'));}
-    catch{
-      let token;
-      try{token=(await fsp.readFile(bootstrapFile,'utf8')).trim();}
-      catch{throw new Error('???????????????????');}
-      if(!/^[A-Za-z0-9_-]{43}$/.test(token))throw new Error('????????????');
-      await fsp.writeFile(tokenFile,JSON.stringify({data:safeStorage.encryptString(token).toString('base64')}),{flag:'wx'});
-      await fsp.rm(bootstrapFile,{force:true});
-      return token;
-    }
-  }
-  function adminToken(){
-    if(!tokenPromise)tokenPromise=loadAdminToken().catch(error=>{tokenPromise=null;throw error;});
-    return tokenPromise;
-  }
-  adminToken().catch(()=>{});
+  const adminToken=()=>adminApprovalToken(vault,app.getPath('userData'));
   const authorized=(event)=>{
     if(!window || event.sender!==window.webContents)throw new Error('???????');
     vault.requireUnlocked();
@@ -48,7 +29,7 @@ app.whenReady().then(()=>{
   ipcMain.handle('admin:setup',(event,input)=>{if(event.sender!==window?.webContents)throw new Error('???????');return vault.setup(input?.password,input?.confirmation);});
   ipcMain.handle('admin:unlock',(event,password)=>{if(event.sender!==window?.webContents)throw new Error('???????');return vault.unlock(password);});
   ipcMain.handle('admin:lock',event=>{authorized(event);vault.lock();return vault.status();});
-  ipcMain.handle('admin:applications',async(event,input)=>{authorized(event);return adminList(await adminToken(),input?.offset||0,input?.limit||200);});
+  ipcMain.handle('admin:applications',async(event,input)=>{authorized(event);return adminList(adminToken(),input?.offset||0,input?.limit||200);});
   ipcMain.handle('admin:application-action',async(event,input)=>{
     authorized(event);
     if(!/^[0-9a-f-]{36}$/.test(input?.id||''))throw new Error('??????');
@@ -58,7 +39,7 @@ app.whenReady().then(()=>{
       if(response!==1)return null;
     }
     vault.requireUnlocked();
-    return adminAction(await adminToken(),input.id,input.action,input.data||{});
+    return adminAction(adminToken(),input.id,input.action,input.data||{});
   });
   ipcMain.handle('admin:legacy-history',event=>{authorized(event);return vault.snapshot().bindings;});
   ipcMain.handle('admin:wallpapers',async event=>{authorized(event);return (await readManifest()).manifest;});
