@@ -1,0 +1,11 @@
+name = "image-workbench-approvals"
+main = "worker.mjs"
+compatibility_date = "2026-10-17"
+workers_dev = true
+preview_urls = false
+account_id = "5989a061d1dcd659f8ef60199027f9ba"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "image-workbench-approvals"
+database_id = "e58ac258-f5dc-48a1-91e2-bf720b131527"

@@ -1,7 +1,8 @@
 const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('workbench',{
   init:()=>ipcRenderer.invoke('app:init'),
-  activateLicense:key=>ipcRenderer.invoke('license:activate',key),
+  submitApplication:data=>ipcRenderer.invoke('approval:submit',data),
+  refreshApplication:()=>ipcRenderer.invoke('approval:refresh'),
   copyMachineCode:()=>ipcRenderer.invoke('license:copy-machine'),
   saveSettings:data=>ipcRenderer.invoke('settings:save',data),
   verifySettings:data=>ipcRenderer.invoke('settings:verify',data),
