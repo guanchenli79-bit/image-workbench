@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: workbench-media:; media-src 'self' workbench-media:; style-src 'self'; script-src 'self'; connect-src 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: workbench-media: workbench-wallpaper:; media-src 'self' workbench-media: workbench-wallpaper:; style-src 'self'; script-src 'self'; connect-src 'self'">
   <title>画境工作台</title>
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="theme.css">
@@ -11,7 +11,8 @@
 </head>
 <body>
   <section id="activationScreen" class="activation-screen" aria-labelledby="activationTitle">
-    <video class="activation-wallpaper" autoplay muted loop playsinline preload="metadata" poster="../../assets/activation-poster.jpg"><source src="../../assets/activation-wallpaper.mp4" type="video/mp4"></video>
+    <video id="activationWallpaperVideo" class="activation-wallpaper" autoplay muted loop playsinline preload="metadata" poster="../../assets/activation-poster.jpg"><source id="activationWallpaperSource" src="../../assets/activation-wallpaper.mp4" type="video/mp4"></video>
+    <img id="activationWallpaperImage" class="activation-wallpaper" alt="" hidden>
     <div class="activation-vignette"></div>
     <div class="activation-brand"><img src="../../assets/logo.svg" alt=""><span>画境 <small>IMAGE WORKBENCH</small></span></div>
     <div class="activation-card">

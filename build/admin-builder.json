@@ -10,6 +10,8 @@
     "src/admin-license.cjs",
     "src/admin-vault.cjs",
     "src/license.cjs",
+    "src/wallpapers.cjs",
+    "src/admin-wallpapers.cjs",
     "src/network.cjs",
     "src/admin-ui/**/*",
     "assets/logo.ico",

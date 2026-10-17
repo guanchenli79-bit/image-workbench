@@ -3,6 +3,18 @@ const state = {view:'image',presetId:'auto',modelId:'gpt-image-2-vip',resolution
 let toastTimer;
 let sizeNoteRequest=0;
 let workspaceBound=false;
+function applyWallpaper(wallpaper){
+  if(!wallpaper)return;
+  const video=$('activationWallpaperVideo');const image=$('activationWallpaperImage');
+  if(wallpaper.kind==='image'){
+    image.src=wallpaper.url;image.hidden=false;video.hidden=true;video.pause();
+  }else{
+    image.hidden=true;image.removeAttribute('src');video.hidden=false;
+    const source=$('activationWallpaperSource');
+    if(source.getAttribute('src')!==wallpaper.url){source.src=wallpaper.url;video.load();}
+    video.play().catch(()=>{});
+  }
+}
 function renderModelSync(){
   if(!state.settings)return;
   const settings=state.settings;
@@ -28,13 +40,15 @@ function applyModelSnapshot(snapshot){
 function showActivation(license){
   document.querySelector('.app-shell').hidden=true;
   $('activationScreen').hidden=false;
+  if(!$('activationWallpaperVideo').hidden)$('activationWallpaperVideo').play().catch(()=>{});
   $('machineCodeValue').textContent=license.machineCode||'机器码读取失败';
   $('copyMachineCode').disabled=!license.machineCode;
   $('activationSubmit').disabled=!license.machineCode;
   const message=$('activationMessage');message.textContent=license.message||'将机器码发给管理员获取卡密';message.className='activation-message';
 }
-function showWorkspace(){ $('activationScreen').hidden=true;document.querySelector('.app-shell').hidden=false; }
+function showWorkspace(){ $('activationScreen').hidden=true;$('activationWallpaperVideo').pause();document.querySelector('.app-shell').hidden=false; }
 function bindActivation(){
+  window.workbench.onWallpaper(applyWallpaper);
   $('copyMachineCode').addEventListener('click',async()=>{try{await window.workbench.copyMachineCode();$('activationMessage').textContent='机器码已复制，发送给管理员即可';$('activationMessage').className='activation-message success';}catch(error){$('activationMessage').textContent=error.message;$('activationMessage').className='activation-message error';}});
   $('activationForm').addEventListener('submit',async event=>{
     event.preventDefault();const button=$('activationSubmit');const message=$('activationMessage');button.disabled=true;button.textContent='正在核验卡密…';message.textContent='正在连接授权服务';message.className='activation-message';
@@ -227,5 +241,5 @@ function bindEvents(){document.querySelectorAll('.nav-item').forEach(b=>b.addEve
   window.workbench.onModelSyncError(error=>toast('自动同步模型失败：'+error));
   window.workbench.onHistory(data=>{state.history=data;renderHistory();});window.workbench.onUpdate(data=>{renderUpdate(data);if(data.state==='ready')toast(`新版本 ${data.version} 已下载，可选择重启安装`);});
 }
-async function boot(){bindActivation();try{const init=await window.workbench.init();$('activationVersion').textContent=`画境工作台 v${init.version}`;if(init.license.active)initializeWorkspace(init);else showActivation(init.license);}catch(e){$('activationMessage').textContent=`启动失败：${e.message}`;$('activationMessage').className='activation-message error';}}
+async function boot(){bindActivation();try{const init=await window.workbench.init();applyWallpaper(init.wallpaper);$('activationVersion').textContent=`画境工作台 v${init.version}`;if(init.license.active)initializeWorkspace(init);else showActivation(init.license);}catch(e){$('activationMessage').textContent=`启动失败：${e.message}`;$('activationMessage').className='activation-message error';}}
 boot();

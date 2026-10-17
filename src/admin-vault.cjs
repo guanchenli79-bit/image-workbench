@@ -2,11 +2,11 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 
-const emptyData = () => ({notes:{},history:[]});
+const emptyData = () => ({notes:{},history:[],bindings:[]});
 
 class AdminVault {
   constructor(file) { this.file=file; this.key=null; this.salt=null; this.data=null; this.failed=0; this.retryAt=0; }
-  exists() { return fs.existsSync(this.file); }
+  exists() { return fs.existsSync(this.file)||fs.existsSync(`${this.file}.bak`); }
   isUnlocked() { return Boolean(this.key && this.data); }
   status() { return {needsSetup:!this.exists(),unlocked:this.isUnlocked()}; }
   derive(password,salt) { return crypto.scryptSync(password,salt,32); }
@@ -24,17 +24,25 @@ class AdminVault {
   unlock(password) {
     if(!this.exists()) throw new Error('请先设置管理员密码');
     if(Date.now()<this.retryAt) throw new Error(`尝试次数过多，请 ${Math.ceil((this.retryAt-Date.now())/1000)} 秒后重试`);
-    const envelope=JSON.parse(fs.readFileSync(this.file,'utf8'));
-    if(envelope.version!==1) throw new Error('管理端数据格式不受支持');
     try {
-      const salt=Buffer.from(envelope.salt,'base64');
-      const key=this.derive(password,salt);
-      const decipher=crypto.createDecipheriv('aes-256-gcm',key,Buffer.from(envelope.iv,'base64'));
-      decipher.setAuthTag(Buffer.from(envelope.tag,'base64'));
-      const data=JSON.parse(Buffer.concat([decipher.update(Buffer.from(envelope.data,'base64')),decipher.final()]).toString('utf8'));
-      if(!data || typeof data.notes!=='object' || !Array.isArray(data.history)) throw new Error('管理端数据损坏');
-      this.salt=salt; this.key=key; this.data=data; this.failed=0; this.retryAt=0;
-      return this.status();
+      for(const candidate of [this.file,`${this.file}.bak`]){
+        if(!fs.existsSync(candidate))continue;
+        try{
+          const envelope=JSON.parse(fs.readFileSync(candidate,'utf8'));
+          if(envelope.version!==1)throw new Error('格式不受支持');
+          const salt=Buffer.from(envelope.salt,'base64');
+          const key=this.derive(password,salt);
+          const decipher=crypto.createDecipheriv('aes-256-gcm',key,Buffer.from(envelope.iv,'base64'));
+          decipher.setAuthTag(Buffer.from(envelope.tag,'base64'));
+          const data=JSON.parse(Buffer.concat([decipher.update(Buffer.from(envelope.data,'base64')),decipher.final()]).toString('utf8'));
+          if(!data || typeof data.notes!=='object' || !Array.isArray(data.history))throw new Error('管理端数据损坏');
+          if(!Array.isArray(data.bindings))data.bindings=data.history.map(item=>({...item}));
+          this.salt=salt;this.key=key;this.data=data;this.failed=0;this.retryAt=0;
+          if(candidate!==this.file)try{fs.copyFileSync(candidate,this.file);}catch{}
+          return this.status();
+        }catch{}
+      }
+      throw new Error('管理数据不可解密');
     } catch {
       this.failed++;
       if(this.failed>=5) { this.retryAt=Date.now()+30000; this.failed=0; }
@@ -51,7 +59,7 @@ class AdminVault {
     const envelope={version:1,salt:this.salt.toString('base64'),iv:iv.toString('base64'),tag:cipher.getAuthTag().toString('base64'),data:encrypted.toString('base64')};
     fs.mkdirSync(path.dirname(this.file),{recursive:true});
     const temp=`${this.file}.${process.pid}.tmp`;
-    try { fs.writeFileSync(temp,JSON.stringify(envelope),{mode:0o600}); fs.renameSync(temp,this.file); }
+    try { fs.writeFileSync(temp,JSON.stringify(envelope),{mode:0o600}); fs.renameSync(temp,this.file); try{fs.copyFileSync(this.file,`${this.file}.bak`);}catch{} }
     finally { if(fs.existsSync(temp)) fs.unlinkSync(temp); }
   }
   snapshot() { this.requireUnlocked(); return structuredClone(this.data); }

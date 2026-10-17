@@ -13,8 +13,12 @@ const { recoverSubmittedMidjourney } = require('./recovery.cjs');
 const { releaseNotesText } = require('./update-notes.cjs');
 const { prepareReference, MAX_REFERENCES } = require('./references.cjs');
 const { currentMachineCode, normalizeLicenseKey, hashCode, findLicense, fetchRegistry } = require('./license.cjs');
+const {fetchManifest,downloadWallpaper,sha256}=require('./wallpapers.cjs');
 
-protocol.registerSchemesAsPrivileged([{scheme:'workbench-media',privileges:{secure:true,standard:true,supportFetchAPI:true,stream:true}}]);
+protocol.registerSchemesAsPrivileged([
+  {scheme:'workbench-media',privileges:{secure:true,standard:true,supportFetchAPI:true,stream:true}},
+  {scheme:'workbench-wallpaper',privileges:{secure:true,standard:true,supportFetchAPI:true,stream:true}}
+]);
 
 let mainWindow;
 let records = [];
@@ -37,10 +41,41 @@ let licenseMachineError = '';
 let licenseRecord = null;
 let licenseRefreshInFlight = false;
 let licenseReason = '';
+let currentWallpaper={id:'original',kind:'bundled'};
+let wallpaperSyncing=false;
 
 function files() {
   const dir = app.getPath('userData');
-  return {dir, settings:path.join(dir,'settings.json'),history:path.join(dir,'history.json'),license:path.join(dir,'license.json'),media:path.join(dir,'temporary-media')};
+  return {dir, settings:path.join(dir,'settings.json'),history:path.join(dir,'history.json'),license:path.join(dir,'license.json'),media:path.join(dir,'temporary-media'),
+    wallpaper:path.join(dir,'wallpaper-state.json'),wallpaperCache:path.join(dir,'wallpaper-cache')};
+}
+function wallpaperDescriptor(){
+  return currentWallpaper.kind==='bundled'?{id:'original',kind:'video',url:'../../assets/activation-wallpaper.mp4'}:
+    {id:currentWallpaper.id,kind:currentWallpaper.kind,url:`workbench-wallpaper://current/${path.basename(currentWallpaper.file)}`};
+}
+async function loadCachedWallpaper(){
+  try{
+    const saved=JSON.parse(await fsp.readFile(files().wallpaper,'utf8'));
+    if(saved.kind==='bundled')return;
+    const file=path.join(files().wallpaperCache,path.basename(saved.file||''));
+    const data=await fsp.readFile(file);
+    if(sha256(data)===saved.sha256)currentWallpaper={id:saved.id,kind:saved.kind,file,sha256:saved.sha256};
+  }catch{}
+}
+async function syncWallpaper(){
+  if(wallpaperSyncing)return;
+  wallpaperSyncing=true;
+  try{
+    const manifest=await fetchManifest();
+    const selected=manifest.items.find(item=>item.id===manifest.activeId);
+    const next=selected.kind==='bundled'?{id:'original',kind:'bundled'}:
+      {id:selected.id,kind:selected.kind,file:await downloadWallpaper(selected,files().wallpaperCache),sha256:selected.sha256};
+    if(next.id!==currentWallpaper.id||next.sha256!==currentWallpaper.sha256){
+      currentWallpaper=next;
+      await writeJson(files().wallpaper,{...next,file:next.file?path.basename(next.file):undefined});
+      emit('wallpaper:changed',wallpaperDescriptor());
+    }
+  }catch{}finally{wallpaperSyncing=false;}
 }
 async function writeJson(file, data) {
   const tmp = `${file}.${process.pid}.${crypto.randomUUID()}.tmp`;
@@ -98,6 +133,7 @@ async function syncActiveModels() {
 async function loadState() {
   const p = files();
   await fsp.mkdir(p.media,{recursive:true});
+  await loadCachedWallpaper();
   try { licenseMachineCode=await currentMachineCode(); } catch(error) { licenseMachineError=error.message; }
   try {
     const stored=JSON.parse(await fsp.readFile(p.license,'utf8'));
@@ -323,8 +359,8 @@ function createWindow() {
 
 function registerIpc() {
   ipcMain.handle('app:init',async()=>licenseStatus().active?
-    {license:licenseStatus(),...modelSnapshot(),presets,history:listHistory(),version:app.getVersion(),isPackaged:app.isPackaged}:
-    {license:licenseStatus(),version:app.getVersion(),isPackaged:app.isPackaged});
+    {license:licenseStatus(),wallpaper:wallpaperDescriptor(),...modelSnapshot(),presets,history:listHistory(),version:app.getVersion(),isPackaged:app.isPackaged}:
+    {license:licenseStatus(),wallpaper:wallpaperDescriptor(),version:app.getVersion(),isPackaged:app.isPackaged});
   ipcMain.handle('license:activate',async(_,key)=>activateLicense(key));
   ipcMain.handle('license:copy-machine',()=>{if(!licenseMachineCode)throw new Error(licenseMachineError||'机器码不可用');clipboard.writeText(licenseMachineCode);return true;});
   ipcMain.handle('settings:save',async(_,input)=>{
@@ -423,7 +459,13 @@ app.whenReady().then(async()=>{
     if(!name)return new Response('Expired',{status:404});
     return net.fetch(pathToFileURL(path.join(files().media,name)).toString());
   });
+  protocol.handle('workbench-wallpaper',async request=>{
+    const url=new URL(request.url);
+    if(url.hostname!=='current'||currentWallpaper.kind==='bundled'||url.pathname!==`/${path.basename(currentWallpaper.file)}`)return new Response('Not found',{status:404});
+    return net.fetch(pathToFileURL(currentWallpaper.file).toString());
+  });
   registerIpc();createWindow();
+  setTimeout(syncWallpaper,1200);setInterval(syncWallpaper,75*1000);
   setTimeout(()=>{
     if(licenseStatus().active&&settings.apiKey)
       syncActiveModels().catch(error=>emit('models:sync-error',error.message));

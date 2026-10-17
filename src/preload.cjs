@@ -22,5 +22,6 @@ contextBridge.exposeInMainWorld('workbench',{
   onUpdate:callback=>{const fn=(_,data)=>callback(data);ipcRenderer.on('update:status',fn);return()=>ipcRenderer.removeListener('update:status',fn);},
   onLicense:callback=>{const fn=(_,data)=>callback(data);ipcRenderer.on('license:status',fn);return()=>ipcRenderer.removeListener('license:status',fn);},
   onModels:callback=>{const fn=(_,data)=>callback(data);ipcRenderer.on('models:changed',fn);return()=>ipcRenderer.removeListener('models:changed',fn);},
-  onModelSyncError:callback=>{const fn=(_,data)=>callback(data);ipcRenderer.on('models:sync-error',fn);return()=>ipcRenderer.removeListener('models:sync-error',fn);}
+  onModelSyncError:callback=>{const fn=(_,data)=>callback(data);ipcRenderer.on('models:sync-error',fn);return()=>ipcRenderer.removeListener('models:sync-error',fn);},
+  onWallpaper:callback=>{const fn=(_,data)=>callback(data);ipcRenderer.on('wallpaper:changed',fn);return()=>ipcRenderer.removeListener('wallpaper:changed',fn);}
 });

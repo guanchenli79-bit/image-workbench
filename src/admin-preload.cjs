@@ -6,9 +6,17 @@ contextBridge.exposeInMainWorld('licenseAdmin',{
   lock:()=>ipcRenderer.invoke('admin:lock'),
   list:()=>ipcRenderer.invoke('admin:list'),
   history:()=>ipcRenderer.invoke('admin:history'),
+  localBindings:()=>ipcRenderer.invoke('admin:bindings-local'),
   ownMachine:()=>ipcRenderer.invoke('admin:own-machine'),
   issue:input=>ipcRenderer.invoke('admin:issue',input),
   rename:input=>ipcRenderer.invoke('admin:rename',input),
   unbind:machineHash=>ipcRenderer.invoke('admin:unbind',machineHash),
+  rebind:input=>ipcRenderer.invoke('admin:rebind',input),
+  deleteBinding:key=>ipcRenderer.invoke('admin:binding-delete',key),
+  wallpapers:()=>ipcRenderer.invoke('admin:wallpapers'),
+  addWallpaper:()=>ipcRenderer.invoke('admin:wallpaper-add'),
+  importScene:()=>ipcRenderer.invoke('admin:wallpaper-import-scene'),
+  selectWallpaper:id=>ipcRenderer.invoke('admin:wallpaper-select',id),
+  deleteWallpaper:id=>ipcRenderer.invoke('admin:wallpaper-delete',id),
   copy:value=>ipcRenderer.invoke('admin:copy',value)
 });

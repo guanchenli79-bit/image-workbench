@@ -43,7 +43,14 @@ function localHistory(vault,registry) {
 }
 
 function view(registry,vault) {
-  return {entries:publicEntries(registry,vault),history:localHistory(vault,registry)};
+  const active=new Map(validateRegistry(registry).entries.map(entry=>[entry.keyHash,entry.machineHash]));
+  const local=vault.snapshot();
+  const bindings=local.bindings.map(item=>({
+    ...item,
+    status:active.get(hashCode('license',item.key))===item.machineHash ?
+      (Date.parse(item.expiresAt)>Date.now()?'有效':'已到期'):'已解绑'
+  }));
+  return {entries:publicEntries(registry,vault),history:localHistory(vault,registry),bindings};
 }
 
 function issueInRegistry(registry,machineCode,date,key = createLicenseKey(),now = new Date()) {
@@ -82,7 +89,9 @@ async function issueLicense(machineCode,date,name,vault) {
       const machineHash=hashCode('machine',issued.machineCode);
       const finalName=normalizedName || data.notes[machineHash] || '';
       if(finalName)data.notes[machineHash]=finalName;
-      data.history.unshift({key:issued.key,machineCode:issued.machineCode,machineHash,name:finalName,issuedAt:issued.registry.entries[0].issuedAt,expiresAt:issued.expiresAt});
+      const record={key:issued.key,machineCode:issued.machineCode,machineHash,name:finalName,issuedAt:issued.registry.entries[0].issuedAt,expiresAt:issued.expiresAt};
+      data.history.unshift(record);
+      data.bindings.unshift({...record});
     });
   } catch(error) { warning=`卡密已同步到授权库，但本地历史保存失败：${error.message}。请现在复制卡密。`; }
   return {key:issued.key,machineCode:issued.machineCode,expiresAt:issued.expiresAt,...view(issued.registry,vault),warning};
@@ -110,8 +119,55 @@ function renameLicense(machineHash,name,vault) {
     if(normalizedName)data.notes[machineHash]=normalizedName;
     else delete data.notes[machineHash];
     for(const item of data.history)if(item.machineHash===machineHash)item.name=normalizedName;
+    for(const item of data.bindings)if(item.machineHash===machineHash)item.name=normalizedName;
   });
   return normalizedName;
 }
 
-module.exports = { readRegistry, listLicenses, issueLicense, unbindLicense, renameLicense, issueInRegistry, unbindInRegistry, normalizeName, view };
+function rebindInRegistry(registry,keyHash,newMachineCode,expiresAt) {
+  validateRegistry(registry);
+  const machineCode=normalizeMachineCode(newMachineCode);
+  const machineHash=hashCode('machine',machineCode);
+  if(registry.entries.some(entry=>entry.machineHash===machineHash && entry.keyHash!==keyHash))throw new Error('新机器已有其他有效卡密，请先解绑该机器');
+  const existing=registry.entries.find(entry=>entry.keyHash===keyHash);
+  const entries=registry.entries.filter(entry=>entry.keyHash!==keyHash);
+  return {version:1,entries:[{machineHash,keyHash,issuedAt:existing?.issuedAt||new Date().toISOString(),expiresAt:existing?.expiresAt||expiresAt},...entries]};
+}
+
+async function rebindLicense(key,newMachineCode,vault) {
+  vault.requireUnlocked();
+  const normalized=normalizeMachineCode(newMachineCode);
+  const local=vault.snapshot();
+  const item=local.bindings.find(entry=>entry.key===key);
+  if(!item)throw new Error('本机没有这张卡密的绑定记录');
+  if(Date.parse(item.expiresAt)<=Date.now())throw new Error('卡密已到期，请重新签发');
+  const {sha,registry}=await readRegistry();
+  const keyHash=hashCode('license',key);
+  const updated=rebindInRegistry(registry,keyHash,normalized,item.expiresAt);
+  await writeRegistry(updated,sha,`Rebind license ${keyHash.slice(0,12)}`);
+  vault.update(data=>{
+    const record=data.bindings.find(entry=>entry.key===key);
+    record.machineCode=normalized;
+    record.machineHash=hashCode('machine',normalized);
+    record.name=record.name||data.notes[record.machineHash]||'';
+    if(record.name)data.notes[record.machineHash]=record.name;
+  });
+  return view(updated,vault);
+}
+
+async function deleteBinding(key,vault) {
+  vault.requireUnlocked();
+  if(!vault.snapshot().bindings.some(item=>item.key===key))throw new Error('绑定记录不存在');
+  const {sha,registry}=await readRegistry();
+  const keyHash=hashCode('license',key);
+  const updated={version:1,entries:registry.entries.filter(entry=>entry.keyHash!==keyHash)};
+  if(updated.entries.length!==registry.entries.length)await writeRegistry(updated,sha,`Delete license ${keyHash.slice(0,12)}`);
+  vault.update(data=>{
+    data.bindings=data.bindings.filter(item=>item.key!==key);
+    data.history=data.history.filter(item=>item.key!==key);
+  });
+  return view(updated,vault);
+}
+
+module.exports = { readRegistry, listLicenses, issueLicense, unbindLicense, renameLicense, rebindLicense, deleteBinding,
+  issueInRegistry, unbindInRegistry, rebindInRegistry, normalizeName, view };

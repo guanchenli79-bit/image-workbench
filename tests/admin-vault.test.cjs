@@ -5,7 +5,7 @@ const os=require('node:os');
 const path=require('node:path');
 const {AdminVault}=require('../src/admin-vault.cjs');
 const {machineCodeFromGuid,hashCode}=require('../src/license.cjs');
-const {issueInRegistry,unbindInRegistry,normalizeName,view}=require('../src/admin-license.cjs');
+const {issueInRegistry,unbindInRegistry,rebindInRegistry,normalizeName,view}=require('../src/admin-license.cjs');
 
 test('管理员密码保护本机备注和生成历史',()=>{
   const dir=fs.mkdtempSync(path.join(os.tmpdir(),'admin-vault-test-'));
@@ -21,7 +21,8 @@ test('管理员密码保护本机备注和生成历史',()=>{
     first.setup('strong password','strong password');
     first.update(data=>{
       data.notes[machineHash]='设计部电脑';
-      data.history.push({key:issued.key,machineCode,machineHash,name:'设计部电脑',issuedAt:'2026-10-17T00:00:00.000Z',expiresAt:issued.expiresAt});
+      const item={key:issued.key,machineCode,machineHash,name:'设计部电脑',issuedAt:'2026-10-17T00:00:00.000Z',expiresAt:issued.expiresAt};
+      data.history.push(item);data.bindings.push({...item});
     });
     assert.equal(fs.readFileSync(file,'utf8').includes(issued.key),false);
     assert.equal(fs.readFileSync(file,'utf8').includes('设计部电脑'),false);
@@ -34,7 +35,18 @@ test('管理员密码保护本机备注和生成历史',()=>{
     assert.equal(current.entries[0].name,'设计部电脑');
     assert.equal(current.history[0].key,issued.key);
     assert.equal(current.history[0].status,'有效');
+    assert.equal(current.bindings[0].machineCode,machineCode);
     assert.equal(view(unbindInRegistry(issued.registry,machineHash),reopened).history[0].status,'已失效');
+    assert.equal(view(unbindInRegistry(issued.registry,machineHash),reopened).bindings[0].status,'已解绑');
+    const another=machineCodeFromGuid('e13f815a-63ab-4c4a-af4f-3fbf707d1002');
+    const rebound=rebindInRegistry(issued.registry,hashCode('license',issued.key),another,issued.expiresAt);
+    assert.equal(rebound.entries[0].machineHash,hashCode('machine',another));
+    assert.equal(rebound.entries[0].keyHash,hashCode('license',issued.key));
+    assert.equal(rebound.entries.length,1);
+    assert.ok(fs.existsSync(`${file}.bak`));
+    fs.writeFileSync(file,'corrupted');
+    const recovered=new AdminVault(file);recovered.unlock('strong password');
+    assert.equal(recovered.snapshot().bindings[0].key,issued.key);
     assert.throws(()=>normalizeName('a'.repeat(41)),/40/);
   }finally{fs.rmSync(dir,{recursive:true,force:true});}
 });

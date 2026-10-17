@@ -1,0 +1,37 @@
+const test=require('node:test');
+const assert=require('node:assert/strict');
+const fs=require('node:fs/promises');
+const os=require('node:os');
+const path=require('node:path');
+const {defaultManifest,validateManifest,fetchManifest,downloadWallpaper,sha256}=require('../src/wallpapers.cjs');
+const {detectKind}=require('../src/admin-wallpapers.cjs');
+
+test('远程壁纸目录只接受本仓库的合法媒体路径',()=>{
+  const manifest=defaultManifest();
+  assert.equal(validateManifest(manifest).activeId,'original');
+  const data=Buffer.from([255,216,255,...new Array(120).fill(1)]);
+  const item={id:'wall-test',name:'测试壁纸',kind:'image',path:'wallpapers/assets/wall-test.jpg',sha256:sha256(data),size:data.length};
+  manifest.items.push(item);manifest.activeId=item.id;
+  assert.equal(validateManifest(manifest).items.length,2);
+  assert.equal(detectKind('test.jpg',data).kind,'image');
+  assert.throws(()=>validateManifest({...manifest,items:[manifest.items[0],{...item,path:'../../outside.jpg'}]}),/壁纸文件/);
+});
+
+test('用户端读取当前壁纸并校验下载文件，缓存可离线使用',async()=>{
+  const bytes=Buffer.from([255,216,255,...new Array(120).fill(1)]);
+  const item={id:'wall-test',name:'测试壁纸',kind:'image',path:'wallpapers/assets/wall-test.jpg',sha256:sha256(bytes),size:bytes.length};
+  const manifest={version:1,activeId:item.id,items:[defaultManifest().items[0],item]};
+  const folder=await fs.mkdtemp(path.join(os.tmpdir(),'wallpaper-test-'));
+  try{
+    const remote=async url=>String(url).includes('/contents/')?
+      new Response(JSON.stringify({content:Buffer.from(JSON.stringify(manifest)).toString('base64')})):
+      new Response(bytes);
+    const parsed=await fetchManifest(remote);
+    assert.equal(parsed.activeId,item.id);
+    assert.equal((await fetchManifest(async()=>new Response(null,{status:304}))).activeId,item.id);
+    const output=await downloadWallpaper(item,folder,remote);
+    assert.deepEqual(await fs.readFile(output),bytes);
+    const offline=()=>{throw new Error('offline')};
+    assert.equal(await downloadWallpaper(item,folder,offline),output);
+  }finally{await fs.rm(folder,{recursive:true,force:true});}
+});
