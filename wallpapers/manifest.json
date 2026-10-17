@@ -14,6 +14,14 @@
       "path": "wallpapers/assets/wall-0e1cf67f-8ed3-4a14-94c5-a9fc7e5ec3c6.gif",
       "sha256": "2cf18a0665643d6c703041a31e04d3385a630a15c334078e4278e1d8b4faf35f",
       "size": 817532
+    },
+    {
+      "id": "wall-5a0a559d-bfa6-4fc3-9c7a-d6a43c0f4e37",
+      "name": "第三集(4)",
+      "kind": "video",
+      "path": "wallpapers/assets/wall-5a0a559d-bfa6-4fc3-9c7a-d6a43c0f4e37.mp4",
+      "sha256": "161358c13c9846149587acf366cbc6e4f328366c795fa6f59f5d5c0808cddb39",
+      "size": 7148068
     }
   ]
 }
