@@ -16,6 +16,9 @@ contextBridge.exposeInMainWorld('licenseAdmin',{
   wallpapers:()=>ipcRenderer.invoke('admin:wallpapers'),
   addWallpaper:()=>ipcRenderer.invoke('admin:wallpaper-add'),
   importScene:()=>ipcRenderer.invoke('admin:wallpaper-import-scene'),
+  hideForRecording:()=>ipcRenderer.invoke('admin:wallpaper-record-hide'),
+  showAfterRecording:()=>ipcRenderer.invoke('admin:wallpaper-record-show'),
+  publishRecording:input=>ipcRenderer.invoke('admin:wallpaper-record-publish',input),
   selectWallpaper:id=>ipcRenderer.invoke('admin:wallpaper-select',id),
   deleteWallpaper:id=>ipcRenderer.invoke('admin:wallpaper-delete',id),
   copy:value=>ipcRenderer.invoke('admin:copy',value)

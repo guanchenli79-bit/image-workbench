@@ -3,6 +3,10 @@ const dateText=value=>new Date(value).toLocaleString('zh-CN');
 const message=(value,error=false)=>{$('actionMessage').textContent=value;$('actionMessage').classList.toggle('error',error);};
 let setupMode=false;
 let snapshot={entries:[],bindings:[]};
+let recordingName='';
+let recordedBlob=null;
+let recordedUrl='';
+let recordingBusy=false;
 
 function showAuth(needsSetup){
   setupMode=needsSetup;
@@ -92,7 +96,9 @@ async function loadLicenses(){
     $('licenseList').textContent='在线授权库暂不可用';message(error.message,true);
   }
 }
-const wallpaperUrl=item=>`https://raw.githubusercontent.com/guanchenli79-bit/image-workbench/license-registry/${item.path}?v=${item.sha256}`;
+const wallpaperUrl=item=>item.storage==='release'?
+  `https://github.com/guanchenli79-bit/image-workbench/releases/download/wallpaper-library/${item.path.split('/').pop()}`:
+  `https://raw.githubusercontent.com/guanchenli79-bit/image-workbench/license-registry/${item.path}?v=${item.sha256}`;
 function showWallpapers(manifest){
   const host=$('wallpaperList');host.replaceChildren();
   for(const item of manifest.items){
@@ -137,5 +143,71 @@ $('issueForm').addEventListener('submit',async event=>{
 });
 $('copyIssuedKey').addEventListener('click',async()=>{try{await window.licenseAdmin.copy($('issuedKey').textContent);message('卡密已复制');}catch(error){message(error.message,true);}});
 $('addWallpaper').addEventListener('click',async event=>{const updated=await act(event.currentTarget,()=>window.licenseAdmin.addWallpaper(),'壁纸已添加到远程库');if(updated)showWallpapers(updated);});
-$('importScene').addEventListener('click',async event=>{const updated=await act(event.currentTarget,()=>window.licenseAdmin.importScene(),'场景预览图已添加到远程库');if(updated)showWallpapers(updated);});
+$('importScene').addEventListener('click',async event=>{
+  const button=event.currentTarget;button.disabled=true;
+  try{
+    const result=await window.licenseAdmin.importScene();
+    if(!result)return;
+    if(result.manifest){showWallpapers(result.manifest);message('动态视频壁纸已添加到远程库');return;}
+    recordingName=result.recording.title;
+    $('recordingTitle').textContent=`录制「${recordingName}」`;
+    $('recordingStatus').textContent='请先在 Wallpaper Engine 中设为当前壁纸';
+    $('recordingModal').hidden=false;
+  }catch(error){message(error.message,true);}finally{button.disabled=false;}
+});
+function clearRecording(){
+  recordedBlob=null;
+  if(recordedUrl){URL.revokeObjectURL(recordedUrl);recordedUrl='';}
+  $('recordingPreview').pause();$('recordingPreview').removeAttribute('src');$('recordingPreview').hidden=true;
+  $('publishRecording').hidden=true;
+}
+$('closeRecording').addEventListener('click',()=>{if(recordingBusy)return;clearRecording();$('recordingModal').hidden=true;});
+$('startRecording').addEventListener('click',async()=>{
+  if(recordingBusy)return;
+  recordingBusy=true;clearRecording();$('startRecording').disabled=true;$('closeRecording').disabled=true;
+  let stream;
+  try{
+    $('recordingStatus').textContent='正在获取主显示器画面…';
+    stream=await navigator.mediaDevices.getDisplayMedia({video:{frameRate:20,width:{ideal:1920},height:{ideal:1080}},audio:false});
+    const mimeType=['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm'].find(value=>MediaRecorder.isTypeSupported(value));
+    if(!mimeType)throw new Error('当前管理端无法录制 WEBM 视频');
+    const chunks=[];
+    const recorder=new MediaRecorder(stream,{mimeType,videoBitsPerSecond:2500000});
+    const completed=new Promise((resolve,reject)=>{
+      recorder.ondataavailable=event=>{if(event.data.size)chunks.push(event.data);};
+      recorder.onerror=event=>reject(event.error||new Error('录制失败'));
+      recorder.onstop=resolve;
+    });
+    $('recordingStatus').textContent='管理端即将隐藏，录制 8 秒…';
+    await window.licenseAdmin.hideForRecording();
+    await new Promise(resolve=>setTimeout(resolve,600));
+    recorder.start();
+    await new Promise(resolve=>setTimeout(resolve,8000));
+    recorder.stop();
+    await completed;
+    recordedBlob=new Blob(chunks,{type:'video/webm'});
+    if(recordedBlob.size<100||recordedBlob.size>25*1024*1024)throw new Error('录制文件大小不符合要求，请重试');
+    recordedUrl=URL.createObjectURL(recordedBlob);
+    $('recordingPreview').src=recordedUrl;$('recordingPreview').hidden=false;
+    $('publishRecording').hidden=false;
+    $('recordingStatus').textContent=`录制完成 · ${(recordedBlob.size/1024/1024).toFixed(1)} MB。请检查画面后上传。`;
+  }catch(error){clearRecording();$('recordingStatus').textContent=`录制失败：${error.message}`;}
+  finally{
+    stream?.getTracks().forEach(track=>track.stop());
+    await window.licenseAdmin.showAfterRecording().catch(()=>{});
+    recordingBusy=false;$('startRecording').disabled=false;$('closeRecording').disabled=false;
+  }
+});
+$('publishRecording').addEventListener('click',async()=>{
+  if(!recordedBlob||recordingBusy)return;
+  recordingBusy=true;$('publishRecording').disabled=true;$('closeRecording').disabled=true;
+  $('recordingStatus').textContent='正在上传并登记动态壁纸…';
+  try{
+    const bytes=new Uint8Array(await recordedBlob.arrayBuffer());
+    const manifest=await window.licenseAdmin.publishRecording({bytes,name:recordingName});
+    showWallpapers(manifest);message('动态壁纸已上传；点击“设为当前”即可让用户端同步');
+    clearRecording();$('recordingModal').hidden=true;
+  }catch(error){$('recordingStatus').textContent=`上传失败：${error.message}`;}
+  finally{recordingBusy=false;$('publishRecording').disabled=false;$('closeRecording').disabled=false;}
+});
 window.licenseAdmin.status().then(status=>status.unlocked?showWorkspace():showAuth(status.needsSetup)).catch(error=>{$('authPage').hidden=false;$('authMessage').textContent=error.message;});

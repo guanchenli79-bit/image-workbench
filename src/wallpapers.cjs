@@ -6,6 +6,8 @@ const {networkFetch}=require('./network.cjs');
 
 const MANIFEST_PATH='wallpapers/manifest.json';
 const MAX_WALLPAPER_BYTES=25*1024*1024;
+const MAX_RELEASE_WALLPAPER_BYTES=100*1024*1024;
+const WALLPAPER_RELEASE_TAG='wallpaper-library';
 const DEFAULT_WALLPAPER={id:'original',name:'默认动态壁纸',kind:'bundled'};
 const defaultManifest=()=>({version:1,activeId:'original',items:[{...DEFAULT_WALLPAPER}]});
 const sha256=data=>crypto.createHash('sha256').update(data).digest('hex');
@@ -20,14 +22,18 @@ function validateManifest(value){
     ids.add(item.id);
     if(item.id==='original'){
       if(item.kind!=='bundled')throw new Error('默认壁纸记录格式不正确');
-    }else if(!['image','video'].includes(item.kind)||!/^wallpapers\/assets\/[a-z0-9-]+\.(?:jpg|png|webp|mp4)$/.test(item.path||'')||
-      !/^[0-9a-f]{64}$/.test(item.sha256||'')||!Number.isInteger(item.size)||item.size<100||item.size>MAX_WALLPAPER_BYTES)throw new Error('壁纸文件信息不正确');
+    }else if(!['image','video'].includes(item.kind)||!/^wallpapers\/assets\/[a-z0-9-]+\.(?:jpg|png|webp|mp4|webm)$/.test(item.path||'')||
+      ![undefined,'release'].includes(item.storage)||
+      (item.storage==='release'&&item.kind!=='video')||
+      !/^[0-9a-f]{64}$/.test(item.sha256||'')||!Number.isInteger(item.size)||item.size<100||
+      item.size>(item.storage==='release'?MAX_RELEASE_WALLPAPER_BYTES:MAX_WALLPAPER_BYTES))throw new Error('壁纸文件信息不正确');
   }
   if(!ids.has('original')||!ids.has(value.activeId))throw new Error('壁纸选择无效');
   return value;
 }
 
 function rawUrl(item){
+  if(item.storage==='release')return `https://github.com/${REGISTRY_REPO}/releases/download/${WALLPAPER_RELEASE_TAG}/${path.basename(item.path)}`;
   return `https://raw.githubusercontent.com/${REGISTRY_REPO}/${REGISTRY_BRANCH}/${item.path}?v=${item.sha256}`;
 }
 
@@ -62,7 +68,8 @@ async function downloadWallpaper(item,cacheDir,fetcher=networkFetch){
   const response=await fetcher(rawUrl(item),{signal:AbortSignal.timeout(120000)});
   if(!response.ok)throw new Error(`下载壁纸失败（HTTP ${response.status}）`);
   const chunks=[];let total=0;
-  for await(const chunk of response.body){total+=chunk.length;if(total>MAX_WALLPAPER_BYTES)throw new Error('壁纸文件过大');chunks.push(Buffer.from(chunk));}
+  const limit=item.storage==='release'?MAX_RELEASE_WALLPAPER_BYTES:MAX_WALLPAPER_BYTES;
+  for await(const chunk of response.body){total+=chunk.length;if(total>limit)throw new Error('壁纸文件过大');chunks.push(Buffer.from(chunk));}
   const data=Buffer.concat(chunks);
   if(data.length!==item.size||sha256(data)!==item.sha256)throw new Error('壁纸文件校验失败');
   const temp=`${output}.${process.pid}.tmp`;
@@ -70,4 +77,4 @@ async function downloadWallpaper(item,cacheDir,fetcher=networkFetch){
   return output;
 }
 
-module.exports={MANIFEST_PATH,MAX_WALLPAPER_BYTES,defaultManifest,validateManifest,rawUrl,fetchManifest,downloadWallpaper,sha256};
+module.exports={MANIFEST_PATH,MAX_WALLPAPER_BYTES,MAX_RELEASE_WALLPAPER_BYTES,WALLPAPER_RELEASE_TAG,defaultManifest,validateManifest,rawUrl,fetchManifest,downloadWallpaper,sha256};

@@ -462,7 +462,9 @@ app.whenReady().then(async()=>{
   protocol.handle('workbench-wallpaper',async request=>{
     const url=new URL(request.url);
     if(url.hostname!=='current'||currentWallpaper.kind==='bundled'||url.pathname!==`/${path.basename(currentWallpaper.file)}`)return new Response('Not found',{status:404});
-    return net.fetch(pathToFileURL(currentWallpaper.file).toString());
+    const range=request.headers.get('range');
+    const headers=range&&/^bytes=\d*-\d*$/.test(range)?{Range:range}:{};
+    return net.fetch(pathToFileURL(currentWallpaper.file).toString(),{headers});
   });
   registerIpc();createWindow();
   setTimeout(syncWallpaper,1200);setInterval(syncWallpaper,75*1000);

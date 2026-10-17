@@ -11,7 +11,7 @@ function applyWallpaper(wallpaper){
   }else{
     image.hidden=true;image.removeAttribute('src');video.hidden=false;
     const source=$('activationWallpaperSource');
-    if(source.getAttribute('src')!==wallpaper.url){source.src=wallpaper.url;video.load();}
+    if(source.getAttribute('src')!==wallpaper.url){source.type=wallpaper.url.toLowerCase().endsWith('.webm')?'video/webm':'video/mp4';source.src=wallpaper.url;video.load();}
     video.play().catch(()=>{});
   }
 }

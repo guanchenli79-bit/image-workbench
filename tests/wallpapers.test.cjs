@@ -3,7 +3,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs/promises');
 const os=require('node:os');
 const path=require('node:path');
-const {defaultManifest,validateManifest,fetchManifest,downloadWallpaper,sha256}=require('../src/wallpapers.cjs');
+const {defaultManifest,validateManifest,rawUrl,fetchManifest,downloadWallpaper,sha256}=require('../src/wallpapers.cjs');
 const {detectKind}=require('../src/admin-wallpapers.cjs');
 
 test('远程壁纸目录只接受本仓库的合法媒体路径',()=>{
@@ -15,6 +15,16 @@ test('远程壁纸目录只接受本仓库的合法媒体路径',()=>{
   assert.equal(validateManifest(manifest).items.length,2);
   assert.equal(detectKind('test.jpg',data).kind,'image');
   assert.throws(()=>validateManifest({...manifest,items:[manifest.items[0],{...item,path:'../../outside.jpg'}]}),/壁纸文件/);
+});
+
+test('动态录制文件和大视频素材使用受限的远程路径',()=>{
+  const data=Buffer.concat([Buffer.from([0x1a,0x45,0xdf,0xa3]),Buffer.from('webm'),Buffer.alloc(128)]);
+  assert.equal(detectKind('scene.webm',data).kind,'video');
+  const item={id:'wall-large',name:'动态场景',kind:'video',path:'wallpapers/assets/wall-large.webm',storage:'release',sha256:sha256(data),size:data.length};
+  assert.equal(validateManifest({version:1,activeId:item.id,items:[defaultManifest().items[0],item]}).activeId,item.id);
+  assert.match(rawUrl(item),/\/releases\/download\/wallpaper-library\/wall-large\.webm$/);
+  assert.throws(()=>validateManifest({version:1,activeId:item.id,items:[defaultManifest().items[0],{...item,path:'https://example.com/x.webm'}]}),/壁纸文件/);
+  assert.throws(()=>validateManifest({version:1,activeId:item.id,items:[defaultManifest().items[0],{...item,storage:'other'}]}),/壁纸文件/);
 });
 
 test('用户端读取当前壁纸并校验下载文件，缓存可离线使用',async()=>{
