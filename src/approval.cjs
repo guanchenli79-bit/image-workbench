@@ -31,7 +31,7 @@ async function loadIdentity(app,safeStorage) {
 }
 
 function clientHeaders(identity,machineCode){return {'x-device-id':identity.deviceId,'x-machine-code':machineCode,authorization:`Device ${identity.deviceSecret}`};}
-function submitApplication(identity,machineCode,name,phone){return request('/v1/applications',{method:'POST',body:{...identity,machineCode,name,phone}});}
+function submitApplication(identity,machineCode,username,password){return request('/v1/applications',{method:'POST',body:{...identity,machineCode,username,password}});}
 function getApplication(identity,machineCode){return request('/v1/status',{headers:clientHeaders(identity,machineCode)});}
 function adminList(token,offset=0,limit=200){return request(`/v1/admin/applications?offset=${offset}&limit=${limit}`,{headers:{authorization:`Bearer ${token}`}});}
 function adminAction(token,id,action,body={}){return request(`/v1/admin/applications/${id}/${action}`,{method:'POST',body,headers:{authorization:`Bearer ${token}`}});}

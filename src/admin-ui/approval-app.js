@@ -40,8 +40,9 @@ function renderApplications(){
   if(!otherItems.length)bindings.append(el('p','暂无绑定或历史记录','empty'));
   for(const item of applications){
     const row=el('article','', 'binding-row');
-    const top=el('div','', 'binding-top');top.append(el('strong',item.name||'未命名'),el('span',statusText[item.status]||item.status,`status ${item.status==='approved'?'active':''}`));
-    const pair=el('div','', 'binding-pair');pair.append(el('code',`手机号 ${item.phone}`),el('code',`机器码 ${item.machineCode}`));
+    const top=el('div','', 'binding-top');top.append(el('strong',item.name||item.username||'未命名'),el('span',statusText[item.status]||item.status,`status ${item.status==='approved'?'active':''}`));
+    const pair=el('div','', 'binding-pair');pair.append(el('code',item.username?`用户名 ${item.username}`:`旧版手机号 ${item.phone}`),el('code',`机器码 ${item.machineCode}`));
+    if(item.username)pair.append(el('code',`密码 ${item.password||'无法读取'}`));
     const meta=el('small',`申请 ${dateText(item.createdAt)}${item.expiresAt?` · 到期 ${dateText(item.expiresAt)}`:''}${item.reason?` · 原因 ${item.reason}`:''}`);
     const actions=el('div','', 'binding-actions');
     const nameInput=document.createElement('input');nameInput.value=item.name||'';nameInput.maxLength=40;nameInput.placeholder='备注名称';nameInput.setAttribute('aria-label','备注名称');
@@ -57,7 +58,7 @@ function renderApplications(){
       const date=document.createElement('input');date.type='date';date.value=item.expiresAt?.slice(0,10)||defaultDate();date.setAttribute('aria-label','新的截止日期');
       actions.append(date,button('修改期限',async event=>{await act(event.currentTarget,()=>change(item,'expiry',{expiresAt:expiryIso(date.value)},'期限已更新'),'期限已更新');}));
       actions.append(button('解绑',async event=>{await act(event.currentTarget,()=>change(item,'unbind',{},'设备已解绑'),'设备已解绑');}));
-      const candidates=applications.filter(other=>other.status==='pending'&&other.phone===item.phone&&other.machineCode!==item.machineCode);
+      const candidates=applications.filter(other=>other.status==='pending'&&(item.username?other.username?.normalize('NFKC').toLowerCase()===item.username.normalize('NFKC').toLowerCase():other.phone===item.phone)&&other.machineCode!==item.machineCode);
       if(candidates.length){
         const select=document.createElement('select');select.setAttribute('aria-label','换绑目标');
         for(const candidate of candidates){const option=document.createElement('option');option.value=candidate.id;option.textContent=`${candidate.machineCode} · ${dateText(candidate.createdAt)}`;select.append(option);}

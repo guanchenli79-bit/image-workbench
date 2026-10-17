@@ -67,7 +67,7 @@ function showActivation(license){
   $('machineCodeValue').textContent=license.machineCode||'机器码读取失败';
   $('copyMachineCode').disabled=!license.machineCode;
   $('activationSubmit').disabled=!license.machineCode;
-  const message=$('activationMessage');message.textContent=license.message||'填写姓名和手机号提交申请';message.className='activation-message';
+  const message=$('activationMessage');message.textContent=license.message||'填写用户名和密码提交申请';message.className='activation-message';
 }
 function showWorkspace(){ $('activationScreen').hidden=true;$('workspaceWallpaper').hidden=false;document.querySelector('.app-shell').hidden=false;syncWallpaperPlayback(); }
 function bindActivation(){
@@ -75,7 +75,7 @@ function bindActivation(){
   $('copyMachineCode').addEventListener('click',async()=>{try{await window.workbench.copyMachineCode();$('activationMessage').textContent='机器码已复制';$('activationMessage').className='activation-message success';}catch(error){$('activationMessage').textContent=error.message;$('activationMessage').className='activation-message error';}});
   $('activationForm').addEventListener('submit',async event=>{
     event.preventDefault();const button=$('activationSubmit');const message=$('activationMessage');button.disabled=true;button.textContent='正在提交申请…';message.textContent='正在连接审批服务';message.className='activation-message';
-    try{const status=await window.workbench.submitApplication({name:$('applicantName').value,phone:$('applicantPhone').value});showActivation(status);}
+    try{const status=await window.workbench.submitApplication({username:$('applicantUsername').value,password:$('applicantPassword').value});$('applicantPassword').value='';showActivation(status);}
     catch(error){message.textContent=(error.message||'激活失败').replace(/^Error invoking remote method '[^']+': Error: /,'');message.className='activation-message error';}
     finally{button.disabled=false;button.innerHTML='提交使用申请 <span>↗</span>';}
   });

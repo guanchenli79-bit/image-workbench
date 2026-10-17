@@ -185,7 +185,7 @@ function licenseStatus() {
   }
   const valid=!!licenseMachineCode && !!licenseRecord && Date.parse(licenseRecord.expiresAt)>now && now+5*60*1000>=Number(licenseRecord.lastSeenAt||0);
   return {active:valid,machineCode:licenseMachineCode||'',expiresAt:valid?licenseRecord.expiresAt:null,
-    status:valid?'legacy':'none',message:licenseMachineError || approvalReason || licenseReason || (licenseRecord&&!valid?'旧版授权已到期，请提交使用申请':'填写姓名和手机号，向管理员提交使用申请')};
+    status:valid?'legacy':'none',message:licenseMachineError || approvalReason || licenseReason || (licenseRecord&&!valid?'旧版授权已到期，请提交使用申请':'填写用户名和密码，向管理员提交使用申请')};
 }
 function requireLicense() {
   if(!licenseStatus().active){emit('license:status',licenseStatus());throw new Error(licenseStatus().message);}
@@ -384,7 +384,7 @@ function registerIpc() {
     {license:licenseStatus(),wallpaper:wallpaperDescriptor(),version:app.getVersion(),isPackaged:app.isPackaged});
   ipcMain.handle('approval:submit',async(_,input)=>{
     if(!deviceIdentity||!licenseMachineCode)throw new Error(approvalReason||licenseMachineError||'设备身份不可用');
-    approvalStatus=await submitApplication(deviceIdentity,licenseMachineCode,String(input?.name||'').trim(),String(input?.phone||'').trim());
+    approvalStatus=await submitApplication(deviceIdentity,licenseMachineCode,String(input?.username||'').trim(),String(input?.password||''));
     approvalCheckedAt=Date.now();
     emit('license:status',licenseStatus());
     return licenseStatus();

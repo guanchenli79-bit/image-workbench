@@ -6,18 +6,19 @@ const {submitApplication,getApplication,adminList,adminAction}=require('../src/a
 const secret=()=>crypto.randomBytes(32).toString('base64url');
 const identity=()=>({deviceId:crypto.randomUUID(),deviceSecret:secret()});
 const machines=['DP-M-ABCD-EFGH-JKMP-QRST','DP-M-BCDE-FGHJ-KMPQ-RSTV'];
-const phone='13000000001';
+const username=`系统测试${Date.now()}`;
+const password=secret();
 const token=process.env.APPROVAL_ADMIN_TOKEN||fs.readFileSync(path.join(process.env.APPDATA,'画境卡密管理','approval-admin-token.txt'),'utf8').trim();
 const ids=[];
 (async()=>{
   try{
     const a=identity(),b=identity();
-    const first=await submitApplication(a,machines[0],'系统测试',phone);ids.push(first.id);
+    const first=await submitApplication(a,machines[0],username,password);ids.push(first.id);
     assert.equal(first.status,'pending');
     assert.equal((await getApplication(a,machines[0])).status,'pending');
-    const second=await submitApplication(b,machines[1],'系统测试',phone);ids.push(second.id);
+    const second=await submitApplication(b,machines[1],username,password);ids.push(second.id);
     assert.equal(second.status,'pending');
-    assert.equal((await adminList(token)).items.some(item=>item.id===first.id),true);
+    assert.equal((await adminList(token)).items.some(item=>item.id===first.id&&item.username===username&&item.password===password),true);
     const expiresAt=new Date(Date.now()+7*86400000).toISOString();
     await adminAction(token,first.id,'approve',{expiresAt});
     assert.equal((await getApplication(a,machines[0])).status,'approved');

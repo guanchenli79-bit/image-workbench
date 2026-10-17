@@ -2,6 +2,24 @@ const json=(body,status=200)=>new Response(JSON.stringify(body),{status,headers:
 const fail=(message,status=400)=>json({error:message},status);
 const now=()=>new Date().toISOString();
 const digest=async value=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value)))).map(byte=>byte.toString(16).padStart(2,'0')).join('');
+const usernameKey=value=>String(value||'').trim().normalize('NFKC').toLowerCase();
+const base64url=bytes=>btoa(String.fromCharCode(...bytes)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+const fromBase64url=value=>Uint8Array.from(atob(String(value).replace(/-/g,'+').replace(/_/g,'/')),char=>char.charCodeAt(0));
+async function passwordKey(env){
+  if(!env.ADMIN_TOKEN)throw new Error('管理员令牌未配置');
+  const raw=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(`image-workbench-password-v1\0${env.ADMIN_TOKEN}`));
+  return crypto.subtle.importKey('raw',raw,'AES-GCM',false,['encrypt','decrypt']);
+}
+async function encryptPassword(password,env){
+  const iv=crypto.getRandomValues(new Uint8Array(12));
+  const data=await crypto.subtle.encrypt({name:'AES-GCM',iv},await passwordKey(env),new TextEncoder().encode(password));
+  return {cipher:base64url(new Uint8Array(data)),iv:base64url(iv)};
+}
+async function decryptPassword(row,env){
+  if(!row.password_cipher||!row.password_iv)return null;
+  const data=await crypto.subtle.decrypt({name:'AES-GCM',iv:fromBase64url(row.password_iv)},await passwordKey(env),fromBase64url(row.password_cipher));
+  return new TextDecoder().decode(data);
+}
 const machineCode=value=>{
   const compact=String(value||'').toUpperCase().replace(/[\s-]/g,'').replace(/O/g,'0').replace(/[IL]/g,'1');
   if(!/^DPM[0-9A-HJKMNP-TV-Z]{16}$/.test(compact))throw new Error('机器标识无效');
@@ -35,27 +53,34 @@ async function requireAdmin(request,env){
 }
 async function apply(request,env){
   const input=await bodyJson(request);
-  const name=String(input.name||'').trim();
-  const phone=String(input.phone||'').trim();
-  if(name.length<2||name.length>40||/[\u0000-\u001f]/.test(name))return fail('姓名需为 2–40 个字符');
-  if(!/^\d{11}$/.test(phone))return fail('手机号需为 11 位数字');
+  const username=String(input.username||'').trim().normalize('NFKC');
+  const password=String(input.password||'');
+  if(username.length<2||username.length>32||!/^[\p{L}\p{N}_.-]+$/u.test(username))return fail('用户名需为 2–32 个字，可用文字、数字、点、下划线或短横线');
+  if(password.length<8||password.length>128||/[\u0000-\u001f]/.test(password))return fail('密码需为 8–128 个字符');
   const code=machineCode(input.machineCode);
   const deviceId=String(input.deviceId||'');
   const secret=String(input.deviceSecret||'');
   if(!/^[0-9a-f-]{36}$/.test(deviceId)||!/^[A-Za-z0-9_-]{43}$/.test(secret))return fail('设备身份无效');
   const secretHash=await digest(`image-workbench-device-v1\0${secret}`);
   const machineHash=await digest(`image-workbench-machine-v1\0${code}`);
-  const phoneHash=await digest(`image-workbench-phone-v1\0${phone}`);
+  const usernameHash=await digest(`image-workbench-username-v1\0${usernameKey(username)}`);
   await expireOld(env.DB);
   const latest=await env.DB.prepare('SELECT * FROM applications WHERE device_id=? ORDER BY created_at DESC LIMIT 1').bind(deviceId).first();
   if(latest&&(!matchesConstantTime(latest.secret_hash,secretHash)||latest.machine_hash!==machineHash))return fail('设备身份与已有申请不符',403);
   if(latest&&['pending','approved'].includes(latest.status))return json(publicStatus(latest));
+  const existing=await env.DB.prepare('SELECT password_cipher,password_iv FROM applications WHERE username_hash=? ORDER BY created_at DESC LIMIT 1').bind(usernameHash).first();
+  if(existing){
+    let matches=false;
+    try{matches=matchesConstantTime(password,await decryptPassword(existing,env));}catch{}
+    if(!matches)return fail('用户名已存在，密码不正确；请联系管理员处理',403);
+  }
   const recent=await env.DB.prepare('SELECT COUNT(*) AS count FROM applications WHERE device_id=? AND created_at>=?').bind(deviceId,new Date(Date.now()-86400000).toISOString()).first();
   if(Number(recent?.count||0)>=5)return fail('今天申请次数已达上限，请明天再试',429);
   const timestamp=now(),id=crypto.randomUUID();
-  await env.DB.prepare("INSERT INTO applications(id,name,phone,phone_hash,machine_code,machine_hash,device_id,secret_hash,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,'pending',?,?)")
-    .bind(id,name,phone,phoneHash,code,machineHash,deviceId,secretHash,timestamp,timestamp).run();
-  return json({id,status:'pending',name,expiresAt:null,reason:'',updatedAt:timestamp},201);
+  const encrypted=await encryptPassword(password,env);
+  await env.DB.prepare("INSERT INTO applications(id,name,phone,phone_hash,username,username_hash,password_cipher,password_iv,machine_code,machine_hash,device_id,secret_hash,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,'pending',?,?)")
+    .bind(id,username,'',`username:${usernameHash}`,username,usernameHash,encrypted.cipher,encrypted.iv,code,machineHash,deviceId,secretHash,timestamp,timestamp).run();
+  return json({id,status:'pending',name:username,expiresAt:null,reason:'',updatedAt:timestamp},201);
 }
 async function status(request,env){
   const credentials=await deviceCredentials(request);
@@ -70,9 +95,14 @@ async function adminList(request,env){
   const url=new URL(request.url);
   const offset=Math.max(0,Math.min(1000000,Number(url.searchParams.get('offset'))||0));
   const limit=Math.max(1,Math.min(200,Number(url.searchParams.get('limit'))||100));
-  const rows=await env.DB.prepare('SELECT id,name,phone,machine_code AS machineCode,status,expires_at AS expiresAt,rejection_reason AS reason,created_at AS createdAt,updated_at AS updatedAt,decided_at AS decidedAt FROM applications ORDER BY created_at DESC,id DESC LIMIT ? OFFSET ?').bind(limit,offset).all();
+  const rows=await env.DB.prepare('SELECT id,name,phone,username,username_hash,password_cipher,password_iv,machine_code AS machineCode,status,expires_at AS expiresAt,rejection_reason AS reason,created_at AS createdAt,updated_at AS updatedAt,decided_at AS decidedAt FROM applications ORDER BY created_at DESC,id DESC LIMIT ? OFFSET ?').bind(limit,offset).all();
   const count=await env.DB.prepare('SELECT COUNT(*) AS count FROM applications').first();
-  return json({items:rows.results||[],total:Number(count?.count||0),offset,limit});
+  const items=await Promise.all((rows.results||[]).map(async row=>({
+    id:row.id,name:row.name,phone:row.username?undefined:row.phone,username:row.username||null,
+    password:row.username?await decryptPassword(row,env):null,machineCode:row.machineCode,
+    status:row.status,expiresAt:row.expiresAt,reason:row.reason,createdAt:row.createdAt,updatedAt:row.updatedAt,decidedAt:row.decidedAt
+  })));
+  return json({items,total:Number(count?.count||0),offset,limit});
 }
 async function adminAction(request,env,id,action){
   const input=action==='delete'?{}:await bodyJson(request);
@@ -86,7 +116,7 @@ async function adminAction(request,env,id,action){
     const expiry=Date.parse(expiresAt);
     if(!Number.isFinite(expiry)||expiry<=Date.now()||expiry>Date.now()+10*366*86400000)return fail('有效期应为未来十年内的时间');
     try{await env.DB.prepare("UPDATE applications SET status='approved',expires_at=?,rejection_reason=NULL,updated_at=?,decided_at=? WHERE id=? AND status='pending'").bind(new Date(expiry).toISOString(),timestamp,timestamp,id).run();}
-    catch{return fail('此手机号或机器已有有效绑定，请先解绑或换绑',409);}
+    catch{return fail('此用户名或机器已有有效绑定，请先解绑或换绑',409);}
   }else if(action==='reject'){
     if(row.status!=='pending')return fail('仅待审批申请可以驳回',409);
     const reason=String(input.reason||'申请未通过').trim().slice(0,120);
@@ -107,7 +137,7 @@ async function adminAction(request,env,id,action){
     if(row.status!=='approved')return fail('仅有效绑定可以换绑',409);
     const target=await env.DB.prepare('SELECT * FROM applications WHERE id=?').bind(String(input.targetId||'')).first();
     if(!target||target.status!=='pending')return fail('新机器需先提交待审批申请',409);
-    if(target.phone_hash!==row.phone_hash)return fail('新机器申请的手机号必须与原绑定一致',409);
+    if(row.username_hash?target.username_hash!==row.username_hash:target.phone_hash!==row.phone_hash)return fail('新机器申请必须使用原用户名和密码',409);
     const occupied=await env.DB.prepare("SELECT id FROM applications WHERE machine_hash=? AND status='approved'").bind(target.machine_hash).first();
     if(occupied)return fail('新机器已有有效绑定',409);
     await env.DB.batch([

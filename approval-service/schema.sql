@@ -3,6 +3,10 @@ CREATE TABLE IF NOT EXISTS applications (
   name TEXT NOT NULL,
   phone TEXT NOT NULL,
   phone_hash TEXT NOT NULL,
+  username TEXT,
+  username_hash TEXT,
+  password_cipher TEXT,
+  password_iv TEXT,
   machine_code TEXT NOT NULL,
   machine_hash TEXT NOT NULL,
   device_id TEXT NOT NULL,
@@ -18,4 +22,6 @@ CREATE INDEX IF NOT EXISTS applications_device_idx ON applications(device_id, cr
 CREATE INDEX IF NOT EXISTS applications_status_idx ON applications(status, created_at DESC);
 CREATE INDEX IF NOT EXISTS applications_phone_idx ON applications(phone_hash, created_at DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS applications_approved_phone_idx ON applications(phone_hash) WHERE status='approved';
+CREATE INDEX IF NOT EXISTS applications_username_idx ON applications(username_hash, created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS applications_approved_username_idx ON applications(username_hash) WHERE status='approved' AND username_hash IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS applications_approved_machine_idx ON applications(machine_hash) WHERE status='approved';
