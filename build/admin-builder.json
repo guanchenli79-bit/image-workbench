@@ -9,6 +9,7 @@
     "src/admin-preload.cjs",
     "src/admin-vault.cjs",
     "src/admin-approval-token.cjs",
+    "src/license.cjs",
     "src/wallpapers.cjs",
     "src/admin-wallpapers.cjs",
     "src/network.cjs",
@@ -20,5 +21,5 @@
   ],
   "asar": true,
   "win": { "icon": "assets/logo.ico", "target": [{ "target": "nsis", "arch": ["x64"] }] },
-  "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true, "createDesktopShortcut": true, "shortcutName": "画境卡密管理" }
+  "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true, "createDesktopShortcut": true, "shortcutName": "画境使用审批管理" }
 }
