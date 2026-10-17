@@ -1,1 +1,19 @@
-{"version":1,"activeId":"original","items":[{"id":"original","name":"默认动态壁纸","kind":"bundled"}]}
+{
+  "version": 1,
+  "activeId": "original",
+  "items": [
+    {
+      "id": "original",
+      "name": "默认动态壁纸",
+      "kind": "bundled"
+    },
+    {
+      "id": "wall-809bf7c2-e036-4658-9a22-c687db0ce6f8",
+      "name": "不良人 · 静态预览",
+      "kind": "image",
+      "path": "wallpapers/assets/wall-809bf7c2-e036-4658-9a22-c687db0ce6f8.jpg",
+      "sha256": "0bc7261237c6acfadb3346ae83c91a2fb0f73c27853d179e581853b7e18cbad2",
+      "size": 802772
+    }
+  ]
+}
