@@ -36,6 +36,21 @@ const pro2K = { '1:1':'2048x2048','4:3':'2048x1536','3:4':'1536x2048','3:2':'256
 const pro4K = { '1:1':'2880x2880','4:3':'3840x2880','3:4':'2880x3840','3:2':'3840x2560','2:3':'2560x3840','16:9':'3840x2160','9:16':'2160x3840' };
 const seedream = { '1:1':'2048x2048','16:9':'2560x1440','9:16':'1440x2560','4:3':'2304x1728','3:4':'1728x2304','3:2':'2496x1664','2:3':'1664x2496','21:9':'3024x1296' };
 const legacy = { '1:1':'1024x1024','3:2':'1792x1024','2:3':'1024x1792' };
+const grsaiSizes = {
+  '1:1':['1024x1024','2048x2048','2880x2880'],
+  '16:9':['1280x720','2048x1152','3840x2160'],
+  '9:16':['720x1280','1152x2048','2160x3840'],
+  '4:3':['1152x864','2304x1728','3264x2448'],
+  '3:4':['864x1152','1728x2304','2448x3264'],
+  '3:2':['1536x1024','2048x1360','3504x2336'],
+  '2:3':['1024x1536','1360x2048','2336x3504'],
+  '5:4':['1120x896','2240x1792','3200x2560'],
+  '4:5':['896x1120','1792x2240','2560x3200'],
+  '21:9':['1456x624','2912x1248','3840x1648'],
+  '9:21':['624x1456','1248x2912','1648x3840'],
+  '2:1':['1536x768','3072x1536','3840x1920'],
+  '1:2':['768x1536','1536x3072','1920x3840']
+};
 
 function resolveSize(model, presetId, prompt, reference, resolutionId) {
   const picked = presets.find(p=>p.id === presetId) || presets[0];
@@ -45,7 +60,10 @@ function resolveSize(model, presetId, prompt, reference, resolutionId) {
   const resolution = resolutionId || model.defaultResolution || allowed[0];
   if (!allowed.includes(resolution)) throw new Error(`此模型不支持 ${resolution} 分辨率`);
   let size = null;
-  if (model.adapter === 'images') {
+  if (model.adapter === 'grsai-image') {
+    if(model.grsaiFamily==='gpt'&&model.resolutions.length>1)
+      size=grsaiSizes[actualRatio]?.[['1K','2K','4K'].indexOf(resolution)]||null;
+  } else if (model.adapter === 'images') {
     let table;
     if (model.id === 'gpt-image-2-vip') table = resolution === '4K' ? vip4K : resolution === '2K' ? vip2K : vip;
     else if (model.id === 'gpt-image-2-pro') table = resolution === '4K' ? pro4K : pro2K;
@@ -54,6 +72,7 @@ function resolveSize(model, presetId, prompt, reference, resolutionId) {
     size = table[actualRatio];
   } else if (model.adapter === 'legacy-images') {
     size = legacy[actualRatio];
+    if(model.id.startsWith('gpt-image-1'))size={'1:1':'1024x1024','3:2':'1536x1024','2:3':'1024x1536'}[actualRatio];
     if (model.id === 'dall-e-2') size = '1024x1024';
   } else if (model.adapter === 'task-image') {
     size = resolution === '4K' ? vip4K[actualRatio] : resolution === '2K' ? pro2K[actualRatio] :

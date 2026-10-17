@@ -1,6 +1,6 @@
 {
   "name": "image-workbench",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "private": true,
   "description": "Geeknow 图像与视频创作工作台",
   "main": "src/main.cjs",
@@ -24,7 +24,9 @@
     "appId": "ai.geeknow.imageworkbench",
     "productName": "画境工作台",
     "artifactName": "ImageWorkbench-${version}-${arch}.${ext}",
-    "directories": { "output": "release" },
+    "directories": {
+      "output": "release"
+    },
     "files": [
       "src/**/*",
       "!src/admin-main.cjs",
@@ -35,13 +37,29 @@
       "package.json"
     ],
     "asar": true,
-    "win": { "icon": "assets/logo.ico", "target": [{ "target": "nsis", "arch": ["x64"] }] },
+    "win": {
+      "icon": "assets/logo.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "shortcutName": "画境工作台"
     },
-    "publish": [{ "provider": "github", "owner": "guanchenli79-bit", "repo": "image-workbench" }]
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "guanchenli79-bit",
+        "repo": "image-workbench"
+      }
+    ]
   }
 }

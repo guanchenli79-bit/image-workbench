@@ -9,11 +9,14 @@ function normalizeBase(value) {
   if (!['https:', 'http:'].includes(url.protocol)) throw new Error('接口地址必须以 https:// 开头');
   if (url.protocol === 'http:' && !['localhost','127.0.0.1','::1'].includes(url.hostname)) throw new Error('为保护 API Key，远程接口地址必须使用 HTTPS');
   if (url.username || url.password || url.search || url.hash) throw new Error('接口地址请只填写基础 URL');
+  if(/\/v1\/?$/.test(url.pathname))url.pathname=url.pathname.replace(/\/v1\/?$/,'')||'/';
   return url.href.replace(/\/+$/, '');
 }
 
 function errorText(data, status) {
-  const raw = String(data?.error?.message || data?.message || data?.description || `API 请求失败（HTTP ${status}）`);
+  if(typeof data?.message==='string' && /<!doctype|<html|<body|<head/i.test(data.message))
+    return '接口网关返回了网页错误（HTTP '+status+'），请检查该端口的接口路径或稍后重试';
+  const raw = String(data?.error?.message || (typeof data?.error==='string'&&data.error) || data?.message || data?.description || `API 请求失败（HTTP ${status}）`);
   if (/rejected by the safety system/i.test(raw)) {
     const requestId = /request ID\s+([\da-f-]{20,})/i.exec(raw)?.[1];
     return `上游安全系统拒绝了这次生成。请检查并调整提示词或参考图；如果认为误判，请联系 Geeknow 客服${requestId ? `，附上请求 ID：${requestId}` : ''}。`;
@@ -46,6 +49,7 @@ async function requestJson(settings, route, options = {}) {
 }
 
 function imageItems(data) {
+  if (Array.isArray(data?.results)) return data.results.map(x=>({url:typeof x==='string'?x:x?.url,mime:'image/png'})).filter(x=>x.url);
   if (Array.isArray(data?.data)) return data.data.map(x => ({ url:x.url, b64:x.b64_json, mime:'image/png' })).filter(x => x.url || x.b64);
   const parts = data?.candidates?.flatMap(x => x?.content?.parts || []) || [];
   return parts.map(x => ({ url: /^https?:\/\//.test(x?.inlineData?.data || '') ? x.inlineData.data : null,
@@ -102,6 +106,23 @@ async function uploadReferences(settings, references, modelName) {
 
 async function generateImage(settings, input, model, sizing, references) {
   const { prompt } = input;
+  if (model.adapter === 'grsai-image') {
+    const body={model:model.id,prompt,images:references.map(dataUri),replyType:'async'};
+    if(model.grsaiFamily==='gpt'){
+      body.aspectRatio=model.resolutions.length===1?sizing.ratio:sizing.size;
+      body.quality=model.quality||'auto';
+    }else{
+      body.aspectRatio=sizing.ratio;
+      body.imageSize=sizing.resolution;
+    }
+    const data=await requestJson(settings,'/v1/api/generate',{method:'POST',body:JSON.stringify(body)});
+    if(['failed','violation'].includes(String(data.status||'').toLowerCase()))throw new Error(errorText(data,200));
+    const items=imageItems(data);
+    if(items.length)return {kind:'complete',items};
+    const taskId=data.id||data.task_id;
+    if(!taskId)throw new Error('Grsai 未返回任务 ID 或图片');
+    return {kind:'task',taskId:String(taskId),taskAdapter:'grsai-image'};
+  }
   if (model.adapter === 'gemini') {
     const parts = [{text:prompt}, ...references.map(ref => ({inlineData:{mimeType:ref.mime,data:ref.buffer.toString('base64')}}))];
     const data = await requestJson(settings, `/v1beta/models/${encodeURIComponent(model.id)}:generateContent`, {
@@ -162,7 +183,7 @@ async function generateImage(settings, input, model, sizing, references) {
   }
   const body = {model:model.id,prompt,n:1,size:sizing.size};
   if (references.length) body.image = references.map(ref=>ref.buffer.toString('base64'));
-  if (model.adapter === 'legacy-images') body.response_format = 'url';
+  if (model.adapter === 'legacy-images' && model.id.startsWith('dall-e-')) body.response_format = 'url';
   const data = await requestJson(settings,'/v1/images/generations',{method:'POST',body:JSON.stringify(body)});
   const items = imageItems(data);
   if (!items.length) throw new Error('接口没有返回图片，请检查模型输出或通道状态');
@@ -189,6 +210,16 @@ async function generateVideo(settings, input, model, sizing, references) {
 }
 
 async function queryTask(settings, adapter, taskId, type) {
+  if(adapter==='grsai-image'){
+    const data=await requestJson(settings,'/v1/api/result?id='+encodeURIComponent(taskId),{allowTaskError:true});
+    const status=String(data.status||'').toLowerCase();
+    if(['failed','violation','cancelled','canceled'].includes(status))return {status:'failed',error:errorText(data,200)};
+    if(data.error)throw new Error(errorText(data,200));
+    const items=imageItems(data);
+    if(items.length)return {status:'complete',items};
+    if(status==='succeeded')throw new Error('Grsai 任务已完成，但接口没有返回图片');
+    return {status:'pending',progress:Math.min(99,Math.max(0,parseInt(data.progress,10)||0))};
+  }
   if (adapter === 'midjourney') {
     const data = await requestJson(settings,`/mj/task/${encodeURIComponent(taskId)}/fetch`);
     const status = String(data.status || '').toUpperCase();

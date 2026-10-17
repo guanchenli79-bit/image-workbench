@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('workbench',{
   copyMachineCode:()=>ipcRenderer.invoke('license:copy-machine'),
   saveSettings:data=>ipcRenderer.invoke('settings:save',data),
   verifySettings:data=>ipcRenderer.invoke('settings:verify',data),
+  syncModels:()=>ipcRenderer.invoke('models:sync'),
   resolveSize:data=>ipcRenderer.invoke('size:resolve',data),
   chooseReferences:()=>ipcRenderer.invoke('reference:choose'),
   addReferences:files=>ipcRenderer.invoke('reference:add',files),
@@ -19,5 +20,7 @@ contextBridge.exposeInMainWorld('workbench',{
   onNotice:callback=>{const fn=(_,data)=>callback(data);ipcRenderer.on('app:notice',fn);return()=>ipcRenderer.removeListener('app:notice',fn);},
   onHistory:callback=>{const fn=(_,data)=>callback(data);ipcRenderer.on('history:changed',fn);return()=>ipcRenderer.removeListener('history:changed',fn);},
   onUpdate:callback=>{const fn=(_,data)=>callback(data);ipcRenderer.on('update:status',fn);return()=>ipcRenderer.removeListener('update:status',fn);},
-  onLicense:callback=>{const fn=(_,data)=>callback(data);ipcRenderer.on('license:status',fn);return()=>ipcRenderer.removeListener('license:status',fn);}
+  onLicense:callback=>{const fn=(_,data)=>callback(data);ipcRenderer.on('license:status',fn);return()=>ipcRenderer.removeListener('license:status',fn);},
+  onModels:callback=>{const fn=(_,data)=>callback(data);ipcRenderer.on('models:changed',fn);return()=>ipcRenderer.removeListener('models:changed',fn);},
+  onModelSyncError:callback=>{const fn=(_,data)=>callback(data);ipcRenderer.on('models:sync-error',fn);return()=>ipcRenderer.removeListener('models:sync-error',fn);}
 });

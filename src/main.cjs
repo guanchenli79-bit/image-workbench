@@ -5,8 +5,9 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { pathToFileURL } = require('node:url');
 const { imageModels, videoModels, presets } = require('./catalog.cjs');
+const {providerFor,grsaiSpec,syncImageModels} = require('./providers.cjs');
 const { resolveSize } = require('./sizing.cjs');
-const { normalizeBase, requestJson, generateImage, generateVideo, queryTask } = require('./api.cjs');
+const { normalizeBase, generateImage, generateVideo, queryTask } = require('./api.cjs');
 const { networkFetch } = require('./network.cjs');
 const { recoverSubmittedMidjourney } = require('./recovery.cjs');
 const { releaseNotesText } = require('./update-notes.cjs');
@@ -18,6 +19,9 @@ protocol.registerSchemesAsPrivileged([{scheme:'workbench-media',privileges:{secu
 let mainWindow;
 let records = [];
 let settings = {baseUrl:'https://www.geeknow.top',apiKey:''};
+let profiles = {};
+let lastDisplayedModels = imageModels;
+let settingsPersistQueue = Promise.resolve();
 const refs = new Map();
 const TTL = 2 * 60 * 60 * 1000;
 const MAX_IMAGE_BYTES = 32 * 1024 * 1024;
@@ -53,6 +57,44 @@ function decrypted(value) {
   if (!safeStorage.isEncryptionAvailable()) return '';
   try { return safeStorage.decryptString(Buffer.from(value,'base64')); } catch { return ''; }
 }
+function fallbackGrsaiModels() {
+  return [
+    {name:'gpt-image-2',desc:'支持1K'},
+    {name:'gpt-image-2-vip',desc:'支持1K、2K、4K'},
+    {name:'gpt-image-2.5',desc:'支持1K'},
+    {name:'nano-banana-2-cl',desc:'支持1K'}
+  ].map(item=>grsaiSpec({type:'image',closeModel:false,...item}));
+}
+function activeProfile() { return profiles[settings.baseUrl]; }
+function activeImageModels() {
+  const profile=activeProfile();
+  if(profile?.models?.length)return profile.models;
+  if(providerFor(settings.baseUrl)==='grsai')return fallbackGrsaiModels();
+  if(providerFor(settings.baseUrl)==='geeknow')return imageModels;
+  return lastDisplayedModels;
+}
+function activeVideoModels() {
+  if(providerFor(settings.baseUrl)==='geeknow')return videoModels;
+  return [{id:'video-needs-adaptation',label:'此端口视频模型待适配',family:'视频',adapter:'unsupported',refs:false,ratios:['16:9'],seconds:[4],resolutions:['default']}];
+}
+function profileSettings(baseUrl) { return {baseUrl,apiKey:profiles[baseUrl]?.apiKey||''}; }
+function modelSnapshot(extra={}) {
+  return {settings:publicSettings(),imageModels:activeImageModels(),videoModels:activeVideoModels(),...extra};
+}
+async function syncActiveModels() {
+  const baseUrl=settings.baseUrl;
+  const result=await syncImageModels(profileSettings(baseUrl));
+  const profile=profiles[baseUrl]||{apiKey:'',models:[]};
+  profile.models=result.models;profile.supported=true;profile.syncedAt=Date.now();
+  profile.source=result.source;profile.unsupportedCount=result.unsupportedCount;
+  profiles[baseUrl]=profile;
+  await persistSettings();
+  if(settings.baseUrl===baseUrl){
+    lastDisplayedModels=result.models;
+    emit('models:changed',modelSnapshot());
+  }
+  return modelSnapshot({source:result.source,unsupportedCount:result.unsupportedCount});
+}
 async function loadState() {
   const p = files();
   await fsp.mkdir(p.media,{recursive:true});
@@ -63,7 +105,21 @@ async function loadState() {
     const record=JSON.parse(decoded);
     if(record.machineHash===hashCode('machine',licenseMachineCode) && /^[0-9a-f]{64}$/.test(record.keyHash))licenseRecord=record;
   } catch {}
-  try { const stored=JSON.parse(await fsp.readFile(p.settings,'utf8')); settings={baseUrl:normalizeBase(stored.baseUrl),apiKey:decrypted(stored.apiKey)}; } catch {}
+  try {
+    const stored=JSON.parse(await fsp.readFile(p.settings,'utf8'));
+    const activeBase=normalizeBase(stored.baseUrl||stored.activeBaseUrl);
+    if(stored.profiles&&typeof stored.profiles==='object'){
+      for(const [rawBase,entry] of Object.entries(stored.profiles)){
+        try{
+          const base=normalizeBase(rawBase);
+          profiles[base]={apiKey:decrypted(entry.apiKey),models:Array.isArray(entry.models)?entry.models.slice(0,500):[],
+            supported:Boolean(entry.supported),syncedAt:Number(entry.syncedAt)||0,source:String(entry.source||''),unsupportedCount:Number(entry.unsupportedCount)||0};
+        }catch{}
+      }
+    } else profiles[activeBase]={apiKey:decrypted(stored.apiKey),models:[],supported:providerFor(activeBase)!=='openai-compatible'};
+    if(!profiles[activeBase])profiles[activeBase]={apiKey:'',models:[],supported:providerFor(activeBase)!=='openai-compatible'};
+    settings=profileSettings(activeBase);
+  } catch {}
   try { records=JSON.parse(await fsp.readFile(p.history,'utf8')); if(!Array.isArray(records))records=[]; } catch { records=[]; }
   if(recoverSubmittedMidjourney(records))await persistRecords();
   await pruneExpired();
@@ -106,10 +162,22 @@ async function refreshLicense() {
     emit('license:status',licenseStatus());
   } catch {} finally { licenseRefreshInFlight=false; }
 }
-async function persistSettings() {
-  await writeJson(files().settings,{baseUrl:settings.baseUrl,apiKey:encrypted(settings.apiKey)});
+function persistSettings() {
+  settingsPersistQueue=settingsPersistQueue.catch(()=>{}).then(async()=>{
+    const stored={baseUrl:settings.baseUrl,profiles:{}};
+    for(const [base,profile] of Object.entries(profiles))
+      stored.profiles[base]={apiKey:encrypted(profile.apiKey),models:profile.models||[],supported:Boolean(profile.supported),
+        syncedAt:profile.syncedAt||0,source:profile.source||'',unsupportedCount:profile.unsupportedCount||0};
+    await writeJson(files().settings,stored);
+  });
+  return settingsPersistQueue;
 }
-function publicSettings() { return {baseUrl:settings.baseUrl,hasKey:!!settings.apiKey,keyTail:settings.apiKey?settings.apiKey.slice(-4):''}; }
+function publicSettings() {
+  const profile=activeProfile();
+  return {baseUrl:settings.baseUrl,hasKey:!!settings.apiKey,keyTail:settings.apiKey?settings.apiKey.slice(-4):'',
+    provider:providerFor(settings.baseUrl),syncedAt:profile?.syncedAt||0,source:profile?.source||'',
+    supported:profile?.supported!==false,unsupportedCount:profile?.unsupportedCount||0};
+}
 function storeReferences(inputs) {
   if (!Array.isArray(inputs) || !inputs.length) return [];
   if (inputs.length + refs.size > MAX_REFERENCES) throw new Error(`参考图最多支持 ${MAX_REFERENCES} 张，请先移除多余图片`);
@@ -214,15 +282,18 @@ async function completeRecord(record,items,settingsSnapshot) {
 }
 
 async function pollTasks() {
-  if(polling || !settings.apiKey || !licenseStatus().active)return;
+  if(polling || !licenseStatus().active)return;
   polling=true;
   try {
     const pending=records.filter(r=>r.status==='pending' && r.taskId);
     await Promise.allSettled(pending.map(async record=>{
       try {
-        const result=await queryTask(settings,record.taskAdapter,record.taskId,record.type);
+        const oldGeeknow=Object.keys(profiles).find(base=>providerFor(base)==='geeknow');
+        const taskSettings=profileSettings(record.baseUrl||oldGeeknow||settings.baseUrl);
+        if(!taskSettings.apiKey){record.lastPollError='原端口的 API Key 已清除，无法继续查询任务';return;}
+        const result=await queryTask(taskSettings,record.taskAdapter,record.taskId,record.type);
         if(!records.includes(record))return;
-        if(result.status==='complete') await completeRecord(record,result.items,{...settings});
+        if(result.status==='complete') await completeRecord(record,result.items,taskSettings);
         else if(result.status==='failed') {record.status='failed';record.error=result.error;await persistRecords();}
         else if(record.progress!==result.progress) {record.progress=result.progress;await persistRecords();}
       } catch(error) { if(records.includes(record)){record.lastPollError=error.message;await persistRecords();} }
@@ -252,7 +323,7 @@ function createWindow() {
 
 function registerIpc() {
   ipcMain.handle('app:init',async()=>licenseStatus().active?
-    {license:licenseStatus(),settings:publicSettings(),imageModels,videoModels,presets,history:listHistory(),version:app.getVersion(),isPackaged:app.isPackaged}:
+    {license:licenseStatus(),...modelSnapshot(),presets,history:listHistory(),version:app.getVersion(),isPackaged:app.isPackaged}:
     {license:licenseStatus(),version:app.getVersion(),isPackaged:app.isPackaged});
   ipcMain.handle('license:activate',async(_,key)=>activateLicense(key));
   ipcMain.handle('license:copy-machine',()=>{if(!licenseMachineCode)throw new Error(licenseMachineError||'机器码不可用');clipboard.writeText(licenseMachineCode);return true;});
@@ -261,19 +332,27 @@ function registerIpc() {
     const baseUrl=normalizeBase(input.baseUrl);
     const apiKey=String(input.apiKey||'').trim();
     if(apiKey && !safeStorage.isEncryptionAvailable())throw new Error('系统安全存储不可用，无法保存 API Key');
-    settings.baseUrl=baseUrl;
-    if(apiKey)settings.apiKey=apiKey;
-    if(input.clearKey)settings.apiKey='';
-    await persistSettings(); return publicSettings();
+    const previousModels=activeImageModels();
+    const profile=profiles[baseUrl]||{apiKey:'',models:[],supported:providerFor(baseUrl)!=='openai-compatible'};
+    if(!profile.models.length && providerFor(baseUrl)==='openai-compatible'){profile.models=previousModels;profile.supported=false;}
+    if(apiKey)profile.apiKey=apiKey;
+    if(input.clearKey)profile.apiKey='';
+    profiles[baseUrl]=profile;
+    settings={baseUrl,apiKey:profile.apiKey};
+    await persistSettings();
+    try{return await syncActiveModels();}
+    catch(error){return modelSnapshot({syncError:error.message});}
   });
   ipcMain.handle('settings:verify',async(_,input)=>{
     requireLicense();
-    const candidate={baseUrl:normalizeBase(input.baseUrl),apiKey:String(input.apiKey||'').trim()||settings.apiKey};
+    const baseUrl=normalizeBase(input.baseUrl);
+    const candidate={baseUrl,apiKey:String(input.apiKey||'').trim()||profiles[baseUrl]?.apiKey||''};
     if(!candidate.apiKey)throw new Error('请先输入 API Key');
-    const data=await requestJson(candidate,'/v1/models',{method:'GET',signal:AbortSignal.timeout(25000)});
-    return {ok:true,modelCount:Array.isArray(data?.data)?data.data.length:null};
+    const result=await syncImageModels(candidate);
+    return {ok:true,modelCount:result.models.length,authVerified:result.provider!=='grsai'};
   });
-  ipcMain.handle('size:resolve',async(_,input)=>{requireLicense();const model=[...imageModels,...videoModels].find(x=>x.id===input.modelId);return model?resolveSize(model,input.presetId,input.prompt,input.referenceDimensions,input.resolutionId):null;});
+  ipcMain.handle('models:sync',async()=>{requireLicense();return syncActiveModels();});
+  ipcMain.handle('size:resolve',async(_,input)=>{requireLicense();const model=[...activeImageModels(),...activeVideoModels()].find(x=>x.id===input.modelId);return model?resolveSize(model,input.presetId,input.prompt,input.referenceDimensions,input.resolutionId):null;});
   ipcMain.handle('reference:choose',async()=>{
     requireLicense();
     const picked=await dialog.showOpenDialog(mainWindow,{title:'选择参考图',properties:['openFile','multiSelections'],filters:[{name:'图片',extensions:['png','jpg','jpeg','webp']}]});
@@ -288,8 +367,9 @@ function registerIpc() {
     requireLicense();
     await pruneExpired();
     const type=input.type==='video'?'video':'image';
-    const model=(type==='video'?videoModels:imageModels).find(x=>x.id===input.modelId);
-    if(!model)throw new Error('请选择可用模型');
+    if(activeProfile()?.supported===false)throw new Error('此端口的模型参数尚未适配，请先同步模型或更换接口地址');
+    const model=(type==='video'?activeVideoModels():activeImageModels()).find(x=>x.id===input.modelId);
+    if(!model||model.adapter==='unsupported')throw new Error('此端口的视频接口尚未适配，请切换到已支持的视频端口');
     const prompt=String(input.prompt||'').trim();if(!prompt)throw new Error('请填写提示词');
     if(prompt.length>8000)throw new Error('提示词过长');
     const references=(input.referenceIds||[]).map(id=>refs.get(id)).filter(Boolean);
@@ -298,7 +378,7 @@ function registerIpc() {
     if(model.requiredRefs && !references.length)throw new Error('该模型需要至少一张参考图');
     const sizing=resolveSize(model,input.presetId,prompt,input.referenceDimensions,type==='image'?input.resolutionId:undefined);
     const snapshot={...settings};
-    const record={id:crypto.randomUUID(),type,modelId:model.id,modelName:model.label,prompt,presetId:input.presetId,resolution:sizing.resolution,actualRatio:sizing.ratio,actualSize:sizing.size,status:'submitting',progress:0,createdAt:Date.now(),files:[]};
+    const record={id:crypto.randomUUID(),type,modelId:model.id,modelName:model.label,baseUrl:settings.baseUrl,prompt,presetId:input.presetId,resolution:sizing.resolution,actualRatio:sizing.ratio,actualSize:sizing.size,status:'submitting',progress:0,createdAt:Date.now(),files:[]};
     records.unshift(record);await persistRecords();
     try {
       const result=type==='image'?await generateImage(snapshot,{prompt},model,sizing,references):await generateVideo(snapshot,{prompt,seconds:input.seconds},model,sizing,references);
@@ -344,6 +424,10 @@ app.whenReady().then(async()=>{
     return net.fetch(pathToFileURL(path.join(files().media,name)).toString());
   });
   registerIpc();createWindow();
+  setTimeout(()=>{
+    if(licenseStatus().active&&settings.apiKey)
+      syncActiveModels().catch(error=>emit('models:sync-error',error.message));
+  },700);
   setInterval(pruneExpired,60*1000);setInterval(pollTasks,15*1000);setTimeout(pollTasks,2000);
   setTimeout(refreshLicense,3000);setInterval(refreshLicense,30*60*1000);
   if(app.isPackaged){

@@ -3,6 +3,27 @@ const state = {view:'image',presetId:'auto',modelId:'gpt-image-2-vip',resolution
 let toastTimer;
 let sizeNoteRequest=0;
 let workspaceBound=false;
+function renderModelSync(){
+  if(!state.settings)return;
+  const settings=state.settings;
+  const provider=settings.provider==='grsai'?'Grsai':settings.provider==='geeknow'?'Geeknow':'自定义接口';
+  $('settingsTitle').textContent='连接 '+provider+' API';
+  const count=state.view==='image'?state.imageModels.length:state.videoModels.length;
+  $('modelCount').textContent=(settings.syncedAt?'已同步 ':'当前 ')+count+' 个模型';
+  $('modelSyncStatus').textContent=settings.supported===false?
+    '此端口缺少可识别的模型或参数接口，需要适配；已保留之前的模型列表，生成暂不可用。':
+    settings.syncedAt?'模型来源：'+settings.source+' · 上次同步 '+new Date(settings.syncedAt).toLocaleString('zh-CN')+
+      (settings.unsupportedCount?' · '+settings.unsupportedCount+' 个模型参数待适配':''):
+      '正在使用已知模型配置，点击“同步模型”刷新此端口的可用列表。';
+  $('generateButton').disabled=settings.supported===false || currentModel()?.adapter==='unsupported';
+}
+function applyModelSnapshot(snapshot){
+  state.settings=snapshot.settings;
+  state.imageModels=snapshot.imageModels;
+  state.videoModels=snapshot.videoModels;
+  if(!currentModels().some(model=>model.id===state.modelId))state.modelId=currentModels()[0]?.id;
+  renderConnection();renderModels();
+}
 
 function showActivation(license){
   document.querySelector('.app-shell').hidden=true;
@@ -95,9 +116,9 @@ function renderModels() {
     for(const model of models.filter(m=>m.family===family)){const option=document.createElement('option');option.value=model.id;option.textContent=model.label;group.append(option);}select.append(group);
   }
   if(!models.some(m=>m.id===state.modelId))state.modelId=models[0].id;
-  select.value=state.modelId;$('modelCount').textContent=`内置 ${models.length} 个模型`;
+  select.value=state.modelId;
   const model=currentModel();$('modelName').textContent=model.label;$('modelFamily').textContent=model.family.toUpperCase();
-  $('modelDesc').textContent=model.requiredRefs?'此模型必须上传参考图':model.refs?'支持文字与参考图创作':'仅支持文字提示词创作';
+  $('modelDesc').textContent=model.description|| (model.requiredRefs?'此模型必须上传参考图':model.refs?'支持文字与参考图创作':'仅支持文字提示词创作');
   $('referenceHint').textContent=model.requiredRefs?'必填 · 请添加参考图':model.refs?'可选 · 支持多图':'此模型不支持参考图';
   $('addReference').disabled=!model.refs;
   const seconds=$('secondsSelect');seconds.replaceChildren();
@@ -105,6 +126,7 @@ function renderModels() {
   $('secondsLabel').hidden=state.view!=='video';
   renderResolutions();
   updateSizeNote();
+  renderModelSync();
 }
 function renderResolutions(){
   const section=$('resolutionSection');section.hidden=state.view!=='image';
@@ -194,11 +216,15 @@ function bindEvents(){document.querySelectorAll('.nav-item').forEach(b=>b.addEve
   document.addEventListener('dragleave',event=>{if(!event.relatedTarget)dropzone.classList.remove('drag-active');});
   document.addEventListener('drop',async event=>{if(!hasDraggedFiles(event))return;event.preventDefault();dropzone.classList.remove('drag-active');if($('creationView').hidden||$('settingsDialog').open||$('updateDialog').open||$('imagePreviewDialog').open)return;try{await addDroppedReferences(event.dataTransfer.files);}catch(error){toast(error.message);}});
   $('generateButton').addEventListener('click',doGenerate);$('settingsButton').addEventListener('click',()=>{$('apiKeyInput').value='';$('baseUrlInput').value=state.settings.baseUrl;renderConnection();$('settingsDialog').showModal();});
+  $('baseUrlInput').addEventListener('input',()=>{$('keyStoredNote').textContent='切换端口时请输入该站点的 API Key；已保存过的端口会自动恢复自己的 Key。';});
   $('closeSettingsDialog').addEventListener('click',()=>$('settingsDialog').close());
   $('toggleKey').addEventListener('click',()=>{const input=$('apiKeyInput');input.type=input.type==='password'?'text':'password';$('toggleKey').textContent=input.type==='password'?'显示':'隐藏';});
-  $('settingsForm').addEventListener('submit',async e=>{e.preventDefault();try{state.settings=await window.workbench.saveSettings({baseUrl:$('baseUrlInput').value,apiKey:$('apiKeyInput').value});renderConnection();$('settingsDialog').close();toast('API 设置已保存');}catch(err){toast(err.message);}});
-  $('verifyKeyButton').addEventListener('click',async()=>{const b=$('verifyKeyButton');b.disabled=true;b.textContent='测试中…';try{const result=await window.workbench.verifySettings({baseUrl:$('baseUrlInput').value,apiKey:$('apiKeyInput').value});toast(`连接成功，当前 Key 可读取 ${result.modelCount??'可用'} 个模型`);}catch(e){toast(`连接失败：${e.message}`);}finally{b.disabled=false;b.textContent='测试连接';}});
-  $('clearKeyButton').addEventListener('click',async()=>{try{state.settings=await window.workbench.saveSettings({baseUrl:$('baseUrlInput').value,clearKey:true});$('apiKeyInput').value='';renderConnection();toast('已清除本机保存的 API Key');}catch(e){toast(e.message);}});
+  $('settingsForm').addEventListener('submit',async e=>{e.preventDefault();try{const result=await window.workbench.saveSettings({baseUrl:$('baseUrlInput').value,apiKey:$('apiKeyInput').value});applyModelSnapshot(result);$('settingsDialog').close();toast(result.syncError?'设置已保存；模型同步失败：'+result.syncError:'API 设置已保存，模型已同步');}catch(err){toast(err.message);}});
+  $('verifyKeyButton').addEventListener('click',async()=>{const b=$('verifyKeyButton');b.disabled=true;b.textContent='测试中…';try{const result=await window.workbench.verifySettings({baseUrl:$('baseUrlInput').value,apiKey:$('apiKeyInput').value});toast(result.authVerified?'连接成功，当前 Key 可读取 '+result.modelCount+' 个生图模型':'已读取 '+result.modelCount+' 个公开模型；此站点需在首次生成时验证 Key 权限');}catch(e){toast('连接失败：'+e.message);}finally{b.disabled=false;b.textContent='测试连接';}});
+  $('clearKeyButton').addEventListener('click',async()=>{try{applyModelSnapshot(await window.workbench.saveSettings({baseUrl:$('baseUrlInput').value,clearKey:true}));$('apiKeyInput').value='';toast('已清除当前端口保存的 API Key');}catch(e){toast(e.message);}});
+  $('syncModelsButton').addEventListener('click',async()=>{const button=$('syncModelsButton');button.disabled=true;button.textContent='同步中…';try{const result=await window.workbench.syncModels();applyModelSnapshot(result);toast('已同步 '+result.imageModels.length+' 个生图模型'+(result.unsupportedCount?'；'+result.unsupportedCount+' 个需要适配':''));}catch(error){toast('同步失败：'+error.message);}finally{button.disabled=false;button.textContent='同步模型 ↻';}});
+  window.workbench.onModels(snapshot=>{applyModelSnapshot(snapshot);});
+  window.workbench.onModelSyncError(error=>toast('自动同步模型失败：'+error));
   window.workbench.onHistory(data=>{state.history=data;renderHistory();});window.workbench.onUpdate(data=>{renderUpdate(data);if(data.state==='ready')toast(`新版本 ${data.version} 已下载，可选择重启安装`);});
 }
 async function boot(){bindActivation();try{const init=await window.workbench.init();$('activationVersion').textContent=`画境工作台 v${init.version}`;if(init.license.active)initializeWorkspace(init);else showActivation(init.license);}catch(e){$('activationMessage').textContent=`启动失败：${e.message}`;$('activationMessage').className='activation-message error';}}

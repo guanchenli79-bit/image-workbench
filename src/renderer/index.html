@@ -57,8 +57,9 @@
             <button class="dropzone" id="addReference" type="button"><span class="upload-mark">↑</span><strong>点击选择或拖入参考图片</strong><small>PNG、JPG、WEBP · 单张不超过 10 MB · 最多 10 张</small></button>
             <div class="reference-list" id="referenceList"></div>
           </section>
-          <section class="field-section"><div class="field-heading"><div><h3>选择模型</h3><span class="hint" id="modelCount"></span></div></div>
+          <section class="field-section"><div class="field-heading"><div><h3>选择模型</h3><span class="hint" id="modelCount"></span></div><button class="model-sync-button" id="syncModelsButton" type="button">同步模型 ↻</button></div>
             <div class="model-select-wrap"><select id="modelSelect" aria-label="选择模型"></select><span class="select-caret">⌄</span></div>
+            <p class="field-note" id="modelSyncStatus"></p>
             <div class="model-info"><span class="model-spark">✦</span><div><strong id="modelName"></strong><p id="modelDesc"></p></div><span id="modelFamily" class="model-tag"></span></div>
           </section>
           <section class="field-section"><div class="field-heading"><div><h3>画幅比例</h3><span class="hint">auto 自动识别画幅</span></div></div>
@@ -76,9 +77,9 @@
       </main>
     </div>
   </div>
-  <dialog id="settingsDialog" class="modal"><form method="dialog" id="settingsForm"><div class="modal-head"><div><span class="eyebrow">CONNECTION</span><h2>连接 Geeknow API</h2></div><button class="modal-close" id="closeSettingsDialog" type="button" aria-label="关闭">×</button></div><p class="modal-intro">每位用户在自己的电脑填写 API Key。Key 使用系统安全存储加密，不会打包进安装程序。</p>
+  <dialog id="settingsDialog" class="modal"><form method="dialog" id="settingsForm"><div class="modal-head"><div><span class="eyebrow">CONNECTION</span><h2 id="settingsTitle">连接图像 API</h2></div><button class="modal-close" id="closeSettingsDialog" type="button" aria-label="关闭">×</button></div><p class="modal-intro">每个接口地址分别保存自己的 API Key。切换地址后会自动同步可识别的生图模型。</p>
     <label class="field-label" for="apiKeyInput">API Key</label><div class="password-wrap"><input id="apiKeyInput" type="password" autocomplete="off" placeholder="粘贴你的 API Key"><button type="button" id="toggleKey">显示</button></div><small id="keyStoredNote" class="input-note">还未设置 API Key</small>
-    <label class="field-label" for="baseUrlInput">接口地址</label><input id="baseUrlInput" type="url" value="https://www.geeknow.top" required><small class="input-note">按 Geeknow 官方文档预填。如接口地址变更，可在这里修改。</small>
+    <label class="field-label" for="baseUrlInput">接口地址</label><input id="baseUrlInput" type="url" value="https://www.geeknow.top" required><small class="input-note">例如 https://grsaiapi.com 或 https://www.geeknow.top。填写基础地址即可。</small>
     <div class="modal-actions"><button type="button" class="ghost-button" id="clearKeyButton">清除 Key</button><div class="settings-actions"><button type="button" class="ghost-button" id="verifyKeyButton">测试连接</button><button type="submit" class="primary-button">保存设置</button></div></div>
   </form></dialog>
   <dialog id="updateDialog" class="modal update-modal" aria-labelledby="updateTitle"><div class="modal-head"><div><span class="eyebrow">APP UPDATE</span><h2 id="updateTitle">发现新版本</h2></div><button class="modal-close" id="closeUpdateDialog" type="button" aria-label="关闭">×</button></div><p class="modal-intro" id="updateDescription">新版本已经发布，你可以选择何时更新。</p><div class="update-notes"><strong>本次更新内容</strong><div id="updateNotesText">正在读取更新说明…</div></div><div class="modal-actions"><button type="button" class="ghost-button" id="updateLaterButton">稍后再说</button><button type="button" class="primary-button" id="updateActionButton">下载更新</button></div></dialog>
