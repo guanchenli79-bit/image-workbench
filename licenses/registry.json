@@ -3,9 +3,9 @@
   "entries": [
     {
       "machineHash": "9c533b81c02057594c3f5cd5f26ced4102deb254eeb7113a5752b7bd14765be1",
-      "keyHash": "76beff65d98492ecd096c7d371ce2ad3256e7297213d0dc52b800aa8a815727c",
-      "issuedAt": "2026-10-17T07:07:04.793Z",
-      "expiresAt": "2026-11-16T15:59:59.000Z"
+      "keyHash": "5e732a6c188348880f0ac5da64d40a4d42997a8b00be1a8db5974caa38522c2f",
+      "issuedAt": "2026-10-17T07:07:13.088Z",
+      "expiresAt": "2027-01-16T15:59:59.000Z"
     }
   ]
 }
