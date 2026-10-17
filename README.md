@@ -17,12 +17,16 @@ Windows 图像与视频生成桌面工作台。使用者填写自己的 Geeknow 
 - GPT Image 系列带参考图任务先上传素材并通过异步接口提交 URL，显示真实进度
 - 浅色／深色模式切换；发现新版本后由用户选择下载及安装
 - 网络请求自动读取 Windows 系统代理，也支持 `HTTP_PROXY`、`HTTPS_PROXY` 和 `NO_PROXY` 环境变量
+- 首次启动显示机器码与卡密激活页；每个 `DP-XXXX-XXXX-XXXX` 卡密只对应一台机器，可设置到期时间
+- 管理机专用卡密管理界面支持签发、查看有效期和解绑；首次激活联网验证，后续可离线使用至到期
 - 兼容返回纯文本 JSON 的 Midjourney 接口，并在升级后恢复曾被误判为失败的已提交任务
 - Midjourney 参考图逐张上传后以图片 URL 提交，减少多图生成请求体积；分别显示上传与提交错误
 - 上游安全系统拒绝生成时显示说明和请求 ID，方便向 Geeknow 客服反馈
 - 使用当前 Electron 剪贴板接口复制图片，保持原始尺寸和逐像素内容
 
-界面提供浅色和深色模式。每位使用者在自己的电脑填写 Key。模型是否可用取决于 Geeknow 账户权限、额度和服务状态。
+界面提供浅色和深色模式。每位使用者先输入管理员签发的卡密，再在自己的电脑填写 Geeknow API Key。模型是否可用取决于 Geeknow 账户权限、额度和服务状态。
+
+授权库位于公开仓库的 `license-registry` 分支，只保存机器码与卡密的 SHA-256 哈希和有效期，不公开明文。管理端通过本机已登录的 GitHub CLI 更新授权库。机器码由 Windows MachineGuid 派生，重装系统或重置该标识后需要管理员解绑并重新签发。该本地授权设计不能抵御对客户端程序本身的修改。
 
 ## 开发和打包
 
@@ -32,8 +36,9 @@ Windows 图像与视频生成桌面工作台。使用者填写自己的 Geeknow 
 npm ci
 npm test
 npm run dist:win
+npm run dist:admin
 ```
 
-打包输出在 `release/`。管理者发布更新时先修改 `package.json` 的 `version`，再上传安装包、对应的 `.blockmap` 和 `latest.yml` 到同版本 GitHub Release。应用配置为从 `guanchenli79-bit/image-workbench` 检查更新。
+用户安装包在 `release/`，管理机专用安装包在 `release-admin/`。管理者发布工作台更新时先修改 `package.json` 的 `version`，再上传用户安装包、对应的 `.blockmap` 和 `latest.yml` 到同版本 GitHub Release。管理端安装包只保存在管理机。应用配置为从 `guanchenli79-bit/image-workbench` 检查更新。
 
 详细使用步骤见 [使用说明.txt](使用说明.txt)。

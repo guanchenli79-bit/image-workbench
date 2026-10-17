@@ -1,0 +1,27 @@
+.activation-screen{position:fixed;inset:0;z-index:100;display:flex;align-items:center;justify-content:flex-end;overflow:hidden;background:#0b152b;color:#f6f8ff;font-family:Inter,"Microsoft YaHei UI","Segoe UI",sans-serif}
+.activation-wallpaper{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center center;opacity:.95}
+.activation-vignette{position:absolute;inset:0;background:linear-gradient(90deg,#07132312 0%,#07132320 43%,#0713238c 70%,#071323bd 100%),linear-gradient(0deg,#07132362,transparent 30%,transparent 75%,#07132332)}
+.activation-brand{position:absolute;top:34px;left:42px;display:flex;align-items:center;gap:12px;text-shadow:0 2px 20px #07132390;font-size:22px;font-weight:650;letter-spacing:.07em}
+.activation-brand img{width:44px;height:44px;filter:drop-shadow(0 3px 18px #6d8aff88)}
+.activation-brand small{display:block;font-size:10px;font-weight:500;letter-spacing:.2em;color:#c9ddff;margin-top:3px}
+.activation-card{position:relative;width:min(435px,calc(100vw - 48px));margin:45px clamp(35px,7vw,120px) 45px 30px;padding:31px 31px 25px;border:1px solid #d7e6ff42;border-radius:24px;background:linear-gradient(145deg,#14243dcb,#0d182bdc);box-shadow:0 0 0 1px #5c93e619,0 0 45px #6ca5ff2b,0 20px 80px #0208149c;backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);animation:activation-enter .65s cubic-bezier(.18,.8,.2,1) both}
+@keyframes activation-enter{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+.activation-eyebrow{display:flex;align-items:center;gap:9px;color:#a9c9ff;font-size:11px;letter-spacing:.19em;font-weight:650}
+.activation-eyebrow i{height:7px;width:7px;background:#8ebcff;border-radius:50%;box-shadow:0 0 12px #8ebcff}
+.activation-card h1{margin:17px 0 8px;font-size:27px;line-height:1.35;letter-spacing:-.02em;font-weight:650}
+.activation-intro{font-size:13px;line-height:1.8;color:#bdcce2;margin:0 0 26px}
+.activation-card label{display:block;font-size:12px;color:#dce8fb;font-weight:600;margin:0 0 9px}
+.activation-machine{display:flex;align-items:center;gap:8px;margin-bottom:24px;padding:5px 5px 5px 14px;border:1px solid #b8d2ff48;background:#f4f8ff0c;border-radius:12px;min-height:49px}
+.activation-machine code{flex:1;overflow-wrap:anywhere;color:#fff;font-family:Consolas,"Microsoft YaHei UI",monospace;font-size:13px;letter-spacing:.045em}
+.activation-machine button{border:1px solid #a9c9ff50;background:#b9d6ff1b;color:#eaf3ff;padding:8px 11px;border-radius:8px;font-size:12px;white-space:nowrap}
+.activation-machine button:hover{background:#bdd9ff35;border-color:#c4dcff}
+.activation-card input{width:100%;height:49px;border-radius:11px;border:1px solid #a9c9ff55;background:#08152587;color:#fff;padding:0 14px;font-size:15px;letter-spacing:.075em;transition:border-color .2s,box-shadow .2s}
+.activation-card input::placeholder{color:#94aac8}
+.activation-card input:focus{border-color:#bcd8ff;box-shadow:0 0 0 3px #86b9ff24}
+.activation-submit{width:100%;height:48px;display:flex;align-items:center;justify-content:center;gap:12px;margin-top:15px;border:1px solid #a9ccff8a;border-radius:11px;background:linear-gradient(100deg,#6b8def,#77adfa);box-shadow:0 7px 22px #5585df51;color:#fff;font-size:14px;font-weight:650}
+.activation-submit:hover{background:linear-gradient(100deg,#789bf5,#8bbcff);box-shadow:0 9px 28px #6698ef76;transform:translateY(-1px)}
+.activation-message{min-height:34px;margin:13px 0 17px;color:#b8c8e3;font-size:12px;line-height:1.5}
+.activation-message.error{color:#ffc0b8}.activation-message.success{color:#b7f3db}
+.activation-foot{display:flex;justify-content:space-between;border-top:1px solid #b7d1fb2c;padding-top:15px;color:#95aac9;font-size:11px;letter-spacing:.02em}
+@media(max-width:800px){.activation-screen{justify-content:center}.activation-vignette{background:#0814267d}.activation-brand{top:22px;left:24px}.activation-card{margin:74px 18px 20px;padding:25px}.activation-card h1{font-size:24px}}
+@media(prefers-reduced-motion:reduce){.activation-card{animation:none}.activation-submit:hover{transform:none}}

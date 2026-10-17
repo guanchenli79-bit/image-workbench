@@ -1,6 +1,8 @@
 const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('workbench',{
   init:()=>ipcRenderer.invoke('app:init'),
+  activateLicense:key=>ipcRenderer.invoke('license:activate',key),
+  copyMachineCode:()=>ipcRenderer.invoke('license:copy-machine'),
   saveSettings:data=>ipcRenderer.invoke('settings:save',data),
   verifySettings:data=>ipcRenderer.invoke('settings:verify',data),
   resolveSize:data=>ipcRenderer.invoke('size:resolve',data),
@@ -16,5 +18,6 @@ contextBridge.exposeInMainWorld('workbench',{
   installUpdate:()=>ipcRenderer.invoke('updates:install'),
   onNotice:callback=>{const fn=(_,data)=>callback(data);ipcRenderer.on('app:notice',fn);return()=>ipcRenderer.removeListener('app:notice',fn);},
   onHistory:callback=>{const fn=(_,data)=>callback(data);ipcRenderer.on('history:changed',fn);return()=>ipcRenderer.removeListener('history:changed',fn);},
-  onUpdate:callback=>{const fn=(_,data)=>callback(data);ipcRenderer.on('update:status',fn);return()=>ipcRenderer.removeListener('update:status',fn);}
+  onUpdate:callback=>{const fn=(_,data)=>callback(data);ipcRenderer.on('update:status',fn);return()=>ipcRenderer.removeListener('update:status',fn);},
+  onLicense:callback=>{const fn=(_,data)=>callback(data);ipcRenderer.on('license:status',fn);return()=>ipcRenderer.removeListener('license:status',fn);}
 });

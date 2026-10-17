@@ -1,0 +1,21 @@
+{
+  "appId": "ai.geeknow.imageworkbench.admin",
+  "productName": "画境卡密管理",
+  "artifactName": "ImageWorkbenchAdmin-${version}-${arch}.${ext}",
+  "extraMetadata": { "main": "src/admin-main.cjs" },
+  "directories": { "output": "release-admin" },
+  "files": [
+    "src/admin-main.cjs",
+    "src/admin-preload.cjs",
+    "src/admin-license.cjs",
+    "src/license.cjs",
+    "src/network.cjs",
+    "src/admin-ui/**/*",
+    "assets/logo.ico",
+    "assets/logo.svg",
+    "package.json"
+  ],
+  "asar": true,
+  "win": { "icon": "assets/logo.ico", "target": [{ "target": "nsis", "arch": ["x64"] }] },
+  "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true, "createDesktopShortcut": true, "shortcutName": "画境卡密管理" }
+}

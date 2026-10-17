@@ -1,13 +1,15 @@
 {
   "name": "image-workbench",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "private": true,
   "description": "Geeknow 图像与视频创作工作台",
   "main": "src/main.cjs",
   "scripts": {
     "start": "electron .",
+    "admin": "electron src/admin-main.cjs",
     "test": "node --test --test-isolation=none tests/*.test.cjs",
     "dist:win": "electron-builder --win nsis",
+    "dist:admin": "electron-builder --config build/admin-builder.json --win nsis",
     "release:win": "electron-builder --win nsis --publish always"
   },
   "dependencies": {
@@ -22,38 +24,24 @@
     "appId": "ai.geeknow.imageworkbench",
     "productName": "画境工作台",
     "artifactName": "ImageWorkbench-${version}-${arch}.${ext}",
-    "directories": {
-      "output": "release"
-    },
+    "directories": { "output": "release" },
     "files": [
       "src/**/*",
+      "!src/admin-main.cjs",
+      "!src/admin-preload.cjs",
+      "!src/admin-license.cjs",
+      "!src/admin-ui/**/*",
       "assets/**/*",
       "package.json"
     ],
     "asar": true,
-    "win": {
-      "icon": "assets/logo.ico",
-      "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        }
-      ]
-    },
+    "win": { "icon": "assets/logo.ico", "target": [{ "target": "nsis", "arch": ["x64"] }] },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "shortcutName": "画境工作台"
     },
-    "publish": [
-      {
-        "provider": "github",
-        "owner": "guanchenli79-bit",
-        "repo": "image-workbench"
-      }
-    ]
+    "publish": [{ "provider": "github", "owner": "guanchenli79-bit", "repo": "image-workbench" }]
   }
 }

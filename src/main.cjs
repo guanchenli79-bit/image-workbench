@@ -11,6 +11,7 @@ const { networkFetch } = require('./network.cjs');
 const { recoverSubmittedMidjourney } = require('./recovery.cjs');
 const { releaseNotesText } = require('./update-notes.cjs');
 const { prepareReference, MAX_REFERENCES } = require('./references.cjs');
+const { currentMachineCode, normalizeLicenseKey, hashCode, findLicense, fetchRegistry } = require('./license.cjs');
 
 protocol.registerSchemesAsPrivileged([{scheme:'workbench-media',privileges:{secure:true,standard:true,supportFetchAPI:true,stream:true}}]);
 
@@ -27,10 +28,15 @@ let historyPersistQueue = Promise.resolve();
 let availableUpdate = false;
 let updateReady = false;
 let readyVersion = null;
+let licenseMachineCode = null;
+let licenseMachineError = '';
+let licenseRecord = null;
+let licenseRefreshInFlight = false;
+let licenseReason = '';
 
 function files() {
   const dir = app.getPath('userData');
-  return {dir, settings:path.join(dir,'settings.json'),history:path.join(dir,'history.json'),media:path.join(dir,'temporary-media')};
+  return {dir, settings:path.join(dir,'settings.json'),history:path.join(dir,'history.json'),license:path.join(dir,'license.json'),media:path.join(dir,'temporary-media')};
 }
 async function writeJson(file, data) {
   const tmp = `${file}.${process.pid}.${crypto.randomUUID()}.tmp`;
@@ -50,10 +56,55 @@ function decrypted(value) {
 async function loadState() {
   const p = files();
   await fsp.mkdir(p.media,{recursive:true});
+  try { licenseMachineCode=await currentMachineCode(); } catch(error) { licenseMachineError=error.message; }
+  try {
+    const stored=JSON.parse(await fsp.readFile(p.license,'utf8'));
+    const decoded=decrypted(stored.data);
+    const record=JSON.parse(decoded);
+    if(record.machineHash===hashCode('machine',licenseMachineCode) && /^[0-9a-f]{64}$/.test(record.keyHash))licenseRecord=record;
+  } catch {}
   try { const stored=JSON.parse(await fsp.readFile(p.settings,'utf8')); settings={baseUrl:normalizeBase(stored.baseUrl),apiKey:decrypted(stored.apiKey)}; } catch {}
   try { records=JSON.parse(await fsp.readFile(p.history,'utf8')); if(!Array.isArray(records))records=[]; } catch { records=[]; }
   if(recoverSubmittedMidjourney(records))await persistRecords();
   await pruneExpired();
+}
+function licenseStatus() {
+  const now=Date.now();
+  const valid=!!licenseMachineCode && !!licenseRecord && Date.parse(licenseRecord.expiresAt)>now && now+5*60*1000>=Number(licenseRecord.lastSeenAt||0);
+  return {active:valid,machineCode:licenseMachineCode||'',expiresAt:valid?licenseRecord.expiresAt:null,
+    message:licenseMachineError || licenseReason || (licenseRecord&&!valid?'授权已到期或系统时间异常，请联系管理员续期':'请输入管理员提供的卡密')};
+}
+function requireLicense() {
+  if(!licenseStatus().active){emit('license:status',licenseStatus());throw new Error(licenseStatus().message);}
+}
+async function persistLicense() {
+  if(!licenseRecord){await fsp.rm(files().license,{force:true});return;}
+  if(!safeStorage.isEncryptionAvailable())throw new Error('Windows 安全存储不可用，无法保存授权');
+  await writeJson(files().license,{data:encrypted(JSON.stringify(licenseRecord))});
+}
+async function activateLicense(input) {
+  if(!licenseMachineCode)throw new Error(licenseMachineError||'机器码不可用');
+  const key=normalizeLicenseKey(input);
+  const registry=await fetchRegistry(undefined,{preferApi:true});
+  const match=findLicense(registry,licenseMachineCode,key);
+  if(!match)throw new Error('卡密无效、已解绑、已到期，或与这台机器不匹配');
+  licenseRecord={machineHash:hashCode('machine',licenseMachineCode),keyHash:hashCode('license',key),expiresAt:match.expiresAt,lastSeenAt:Date.now()};
+  licenseReason='';
+  await persistLicense();
+  emit('license:status',licenseStatus());
+  return licenseStatus();
+}
+async function refreshLicense() {
+  if(licenseRefreshInFlight||!licenseRecord||!licenseMachineCode)return;
+  licenseRefreshInFlight=true;
+  try {
+    const registry=await fetchRegistry();
+    const match=registry.entries.find(entry=>entry.machineHash===licenseRecord.machineHash&&entry.keyHash===licenseRecord.keyHash&&Date.parse(entry.expiresAt)>Date.now());
+    if(!match){licenseRecord=null;licenseReason='授权已被管理员解绑或已到期，请重新获取卡密';}
+    else {licenseRecord.expiresAt=match.expiresAt;licenseRecord.lastSeenAt=Date.now();licenseReason='';}
+    await persistLicense();
+    emit('license:status',licenseStatus());
+  } catch {} finally { licenseRefreshInFlight=false; }
 }
 async function persistSettings() {
   await writeJson(files().settings,{baseUrl:settings.baseUrl,apiKey:encrypted(settings.apiKey)});
@@ -85,6 +136,7 @@ function availableMedia(id,index) {
   return {record,file:path.join(files().media,name)};
 }
 async function saveResult(id,index) {
+  requireLicense();
   const {record,file}=availableMedia(id,index);
   const ext=path.extname(file);
   const chosen=await dialog.showSaveDialog(mainWindow,{title:'永久保存作品',defaultPath:`${record.modelId}-${new Date(record.createdAt).toISOString().slice(0,10)}${ext}`,filters:[{name:record.type==='video'?'视频':'图片',extensions:[ext.slice(1)]}]});
@@ -92,6 +144,7 @@ async function saveResult(id,index) {
   await fsp.copyFile(file,chosen.filePath);return true;
 }
 async function copyImage(id,index) {
+  requireLicense();
   const {record,file}=availableMedia(id,index);
   if(record.type!=='image')throw new Error('仅图片支持复制到剪贴板');
   const original=await fsp.readFile(file);
@@ -161,7 +214,7 @@ async function completeRecord(record,items,settingsSnapshot) {
 }
 
 async function pollTasks() {
-  if(polling || !settings.apiKey)return;
+  if(polling || !settings.apiKey || !licenseStatus().active)return;
   polling=true;
   try {
     const pending=records.filter(r=>r.status==='pending' && r.taskId);
@@ -198,8 +251,13 @@ function createWindow() {
 }
 
 function registerIpc() {
-  ipcMain.handle('app:init',async()=>({settings:publicSettings(),imageModels,videoModels,presets,history:listHistory(),version:app.getVersion(),isPackaged:app.isPackaged}));
+  ipcMain.handle('app:init',async()=>licenseStatus().active?
+    {license:licenseStatus(),settings:publicSettings(),imageModels,videoModels,presets,history:listHistory(),version:app.getVersion(),isPackaged:app.isPackaged}:
+    {license:licenseStatus(),version:app.getVersion(),isPackaged:app.isPackaged});
+  ipcMain.handle('license:activate',async(_,key)=>activateLicense(key));
+  ipcMain.handle('license:copy-machine',()=>{if(!licenseMachineCode)throw new Error(licenseMachineError||'机器码不可用');clipboard.writeText(licenseMachineCode);return true;});
   ipcMain.handle('settings:save',async(_,input)=>{
+    requireLicense();
     const baseUrl=normalizeBase(input.baseUrl);
     const apiKey=String(input.apiKey||'').trim();
     if(apiKey && !safeStorage.isEncryptionAvailable())throw new Error('系统安全存储不可用，无法保存 API Key');
@@ -209,22 +267,25 @@ function registerIpc() {
     await persistSettings(); return publicSettings();
   });
   ipcMain.handle('settings:verify',async(_,input)=>{
+    requireLicense();
     const candidate={baseUrl:normalizeBase(input.baseUrl),apiKey:String(input.apiKey||'').trim()||settings.apiKey};
     if(!candidate.apiKey)throw new Error('请先输入 API Key');
     const data=await requestJson(candidate,'/v1/models',{method:'GET',signal:AbortSignal.timeout(25000)});
     return {ok:true,modelCount:Array.isArray(data?.data)?data.data.length:null};
   });
-  ipcMain.handle('size:resolve',async(_,input)=>{const model=[...imageModels,...videoModels].find(x=>x.id===input.modelId);return model?resolveSize(model,input.presetId,input.prompt,input.referenceDimensions,input.resolutionId):null;});
+  ipcMain.handle('size:resolve',async(_,input)=>{requireLicense();const model=[...imageModels,...videoModels].find(x=>x.id===input.modelId);return model?resolveSize(model,input.presetId,input.prompt,input.referenceDimensions,input.resolutionId):null;});
   ipcMain.handle('reference:choose',async()=>{
+    requireLicense();
     const picked=await dialog.showOpenDialog(mainWindow,{title:'选择参考图',properties:['openFile','multiSelections'],filters:[{name:'图片',extensions:['png','jpg','jpeg','webp']}]});
     if(picked.canceled)return [];
     if(picked.filePaths.length+refs.size>MAX_REFERENCES)throw new Error(`参考图最多支持 ${MAX_REFERENCES} 张，请先移除多余图片`);
     const inputs=await Promise.all(picked.filePaths.map(async file=>({name:path.basename(file),bytes:await fsp.readFile(file)})));
     return storeReferences(inputs);
   });
-  ipcMain.handle('reference:add',async(_,inputs)=>storeReferences(inputs));
-  ipcMain.handle('reference:clear',async(_,ids)=>{for(const id of ids||[])refs.delete(id);});
+  ipcMain.handle('reference:add',async(_,inputs)=>{requireLicense();return storeReferences(inputs);});
+  ipcMain.handle('reference:clear',async(_,ids)=>{requireLicense();for(const id of ids||[])refs.delete(id);});
   ipcMain.handle('generate',async(_,input)=>{
+    requireLicense();
     await pruneExpired();
     const type=input.type==='video'?'video':'image';
     const model=(type==='video'?videoModels:imageModels).find(x=>x.id===input.modelId);
@@ -247,8 +308,9 @@ function registerIpc() {
       return {id:record.id,status:record.status};
     } catch(error) {if(!records.includes(record))return {id:record.id,status:'cleared'};record.status='failed';record.error=error.message;await persistRecords();throw error;}
   });
-  ipcMain.handle('history:list',async()=>{await pruneExpired();return listHistory();});
+  ipcMain.handle('history:list',async()=>{requireLicense();await pruneExpired();return listHistory();});
   ipcMain.handle('history:clear',async()=>{
+    requireLicense();
     const count=records.length;
     if(count){
       const {response}=await dialog.showMessageBox(mainWindow,{type:'warning',title:'清空历史任务？',message:`确定清空全部 ${count} 条历史任务吗？`,detail:'未另存的本机临时图片和视频会一起删除，无法恢复。正在生成的服务端任务可能继续运行。',buttons:['取消','清空历史'],defaultId:0,cancelId:0,noLink:true});
@@ -263,7 +325,7 @@ function registerIpc() {
     }
     return {cleared:true,count};
   });
-  ipcMain.handle('history:save',async(_,id,index)=>saveResult(id,index));
+  ipcMain.handle('history:save',async(_,id,index)=>{requireLicense();return saveResult(id,index);});
   ipcMain.handle('updates:check',async()=>{if(!app.isPackaged)return {message:'开发模式不检查更新'};await autoUpdater.checkForUpdates();return {message:'正在检查更新'};});
   ipcMain.handle('updates:download',async()=>{if(!app.isPackaged||!availableUpdate)throw new Error('当前没有可下载的新版本');await autoUpdater.downloadUpdate();return {message:'更新已下载'};});
   ipcMain.handle('updates:install',()=>{if(!app.isPackaged||!updateReady)throw new Error('更新尚未下载完成');autoUpdater.quitAndInstall(false,true);});
@@ -272,6 +334,7 @@ function registerIpc() {
 app.whenReady().then(async()=>{
   await loadState();
   protocol.handle('workbench-media',async request=>{
+    if(!licenseStatus().active)return new Response('Not licensed',{status:403});
     const url=new URL(request.url);
     const [id,indexRaw]=url.pathname.split('/').filter(Boolean);
     if(url.hostname!=='item'||!/^[0-9a-f-]{36}$/.test(id||'')||!/^[0-9]+$/.test(indexRaw||''))return new Response('Not found',{status:404});
@@ -282,6 +345,7 @@ app.whenReady().then(async()=>{
   });
   registerIpc();createWindow();
   setInterval(pruneExpired,60*1000);setInterval(pollTasks,15*1000);setTimeout(pollTasks,2000);
+  setTimeout(refreshLicense,3000);setInterval(refreshLicense,30*60*1000);
   if(app.isPackaged){
     autoUpdater.autoDownload=false;autoUpdater.autoInstallOnAppQuit=false;
     autoUpdater.fullChangelog=true;

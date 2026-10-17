@@ -2,6 +2,33 @@ const $ = id => document.getElementById(id);
 const state = {view:'image',presetId:'auto',modelId:'gpt-image-2-vip',resolutionId:null,resolutionsByModel:{},references:[],imageModels:[],videoModels:[],presets:[],history:[],settings:null,activeSubmissions:0,lastSubmitAt:0,update:{state:'idle',version:null,percent:0},dismissedUpdateVersion:null,dismissedReadyVersion:null};
 let toastTimer;
 let sizeNoteRequest=0;
+let workspaceBound=false;
+
+function showActivation(license){
+  document.querySelector('.app-shell').hidden=true;
+  $('activationScreen').hidden=false;
+  $('machineCodeValue').textContent=license.machineCode||'机器码读取失败';
+  $('copyMachineCode').disabled=!license.machineCode;
+  $('activationSubmit').disabled=!license.machineCode;
+  const message=$('activationMessage');message.textContent=license.message||'将机器码发给管理员获取卡密';message.className='activation-message';
+}
+function showWorkspace(){ $('activationScreen').hidden=true;document.querySelector('.app-shell').hidden=false; }
+function bindActivation(){
+  $('copyMachineCode').addEventListener('click',async()=>{try{await window.workbench.copyMachineCode();$('activationMessage').textContent='机器码已复制，发送给管理员即可';$('activationMessage').className='activation-message success';}catch(error){$('activationMessage').textContent=error.message;$('activationMessage').className='activation-message error';}});
+  $('activationForm').addEventListener('submit',async event=>{
+    event.preventDefault();const button=$('activationSubmit');const message=$('activationMessage');button.disabled=true;button.textContent='正在核验卡密…';message.textContent='正在连接授权服务';message.className='activation-message';
+    try{await window.workbench.activateLicense($('licenseKeyInput').value);const init=await window.workbench.init();if(!init.license.active)throw new Error('激活后授权状态未更新');initializeWorkspace(init);$('licenseKeyInput').value='';}
+    catch(error){message.textContent=(error.message||'激活失败').replace(/^Error invoking remote method '[^']+': Error: /,'');message.className='activation-message error';}
+    finally{button.disabled=false;button.innerHTML='激活工作台 <span>↗</span>';}
+  });
+  window.workbench.onLicense(status=>{if(!status.active)showActivation(status);});
+}
+function initializeWorkspace(init){
+  Object.assign(state,{settings:init.settings,imageModels:init.imageModels,videoModels:init.videoModels,presets:init.presets,history:init.history});
+  $('versionLabel').textContent=`v${init.version}`;renderConnection();renderRatios();renderModels();renderHistory();
+  if(!workspaceBound){bindEvents();workspaceBound=true;}
+  showWorkspace();
+}
 
 function setTheme(theme){
   const chosen=theme==='dark'?'dark':'light';
@@ -174,5 +201,5 @@ function bindEvents(){document.querySelectorAll('.nav-item').forEach(b=>b.addEve
   $('clearKeyButton').addEventListener('click',async()=>{try{state.settings=await window.workbench.saveSettings({baseUrl:$('baseUrlInput').value,clearKey:true});$('apiKeyInput').value='';renderConnection();toast('已清除本机保存的 API Key');}catch(e){toast(e.message);}});
   window.workbench.onHistory(data=>{state.history=data;renderHistory();});window.workbench.onUpdate(data=>{renderUpdate(data);if(data.state==='ready')toast(`新版本 ${data.version} 已下载，可选择重启安装`);});
 }
-async function boot(){try{const init=await window.workbench.init();Object.assign(state,{settings:init.settings,imageModels:init.imageModels,videoModels:init.videoModels,presets:init.presets,history:init.history});$('versionLabel').textContent=`v${init.version}`;renderConnection();renderRatios();renderModels();renderHistory();bindEvents();}catch(e){toast(`启动失败：${e.message}`);}}
+async function boot(){bindActivation();try{const init=await window.workbench.init();$('activationVersion').textContent=`画境工作台 v${init.version}`;if(init.license.active)initializeWorkspace(init);else showActivation(init.license);}catch(e){$('activationMessage').textContent=`启动失败：${e.message}`;$('activationMessage').className='activation-message error';}}
 boot();

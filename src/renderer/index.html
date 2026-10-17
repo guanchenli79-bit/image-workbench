@@ -7,9 +7,29 @@
   <title>画境工作台</title>
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="theme.css">
+  <link rel="stylesheet" href="activation.css">
 </head>
 <body>
-  <div class="app-shell">
+  <section id="activationScreen" class="activation-screen" aria-labelledby="activationTitle">
+    <video class="activation-wallpaper" autoplay muted loop playsinline preload="metadata" poster="../../assets/activation-poster.jpg"><source src="../../assets/activation-wallpaper.mp4" type="video/mp4"></video>
+    <div class="activation-vignette"></div>
+    <div class="activation-brand"><img src="../../assets/logo.svg" alt=""><span>画境 <small>IMAGE WORKBENCH</small></span></div>
+    <div class="activation-card">
+      <span class="activation-eyebrow"><i></i> DEVICE ACTIVATION</span>
+      <h1 id="activationTitle">开启你的创作空间</h1>
+      <p class="activation-intro">将机器码发给管理员，获取仅适用于这台电脑的卡密。首次激活需要联网。</p>
+      <label for="machineCodeValue">当前机器码</label>
+      <div class="activation-machine"><code id="machineCodeValue">正在读取…</code><button type="button" id="copyMachineCode" aria-label="复制机器码">复制</button></div>
+      <form id="activationForm">
+        <label for="licenseKeyInput">激活卡密</label>
+        <input id="licenseKeyInput" type="text" autocomplete="off" spellcheck="false" maxlength="19" placeholder="DP-XXXX-XXXX-XXXX" aria-describedby="activationMessage" required>
+        <button class="activation-submit" id="activationSubmit" type="submit">激活工作台 <span>↗</span></button>
+      </form>
+      <p id="activationMessage" class="activation-message" role="status" aria-live="polite">正在准备机器码…</p>
+      <div class="activation-foot"><span>一个卡密 · 一台机器</span><span id="activationVersion">画境工作台</span></div>
+    </div>
+  </section>
+  <div class="app-shell" hidden>
     <header class="topbar">
       <div class="brand"><img src="../../assets/logo.svg" alt="画境标识"><div><strong>画境</strong><small>IMAGE WORKBENCH</small></div></div>
       <nav class="nav-list" aria-label="工作区">
