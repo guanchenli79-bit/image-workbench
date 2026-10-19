@@ -14,6 +14,14 @@
       "path": "wallpapers/assets/wall-0e1cf67f-8ed3-4a14-94c5-a9fc7e5ec3c6.gif",
       "sha256": "2cf18a0665643d6c703041a31e04d3385a630a15c334078e4278e1d8b4faf35f",
       "size": 817532
+    },
+    {
+      "id": "wall-1ef9485e-8f52-474b-8e46-fe777a639df6",
+      "name": "【哲风壁纸】动漫女孩-发饰-和风",
+      "kind": "video",
+      "path": "wallpapers/assets/wall-1ef9485e-8f52-474b-8e46-fe777a639df6.mp4",
+      "sha256": "47e2335bd73e8cc67f9c83a03692336dbcaa6d3be8a6e25b79b7bef59d1b745e",
+      "size": 24628337
     }
   ]
 }
