@@ -39,12 +39,37 @@ function machineCodeFromGuid(guid) {
   return `DP-M-${code.slice(0,4)}-${code.slice(4,8)}-${code.slice(8,12)}-${code.slice(12,16)}`;
 }
 
+function machineCodeFromHardware(guid, hardware) {
+  const windowsGuid=String(guid||'').trim().toLowerCase();
+  if(!/^[0-9a-f-]{20,}$/.test(windowsGuid))throw new Error('无法读取有效的 Windows 机器标识');
+  const uuid=String(hardware?.uuid||'').trim().toUpperCase();
+  const validUuid=/^[0-9A-F]{8}(?:-[0-9A-F]{4}){3}-[0-9A-F]{12}$/.test(uuid) &&
+    !/^([0-9A-F])\1{31}$/.test(uuid.replace(/-/g,''));
+  const usableSerial=value=>{
+    const serial=String(value||'').trim().toUpperCase();
+    const compact=serial.replace(/[^A-Z0-9]/g,'');
+    return compact.length>=5 && compact.length<=64 && !/^(?:0+|1+|F+|UNKNOWN|NONE|DEFAULT|TOBEFILLEDBYOEM|SYSTEMSERIALNUMBER|NOTSPECIFIED)$/.test(compact)?compact:null;
+  };
+  const kind=validUuid?'uuid':usableSerial(hardware?.biosSerial)?'bios':usableSerial(hardware?.diskSerial)?'disk':null;
+  const identifier=kind==='uuid'?uuid:kind==='bios'?usableSerial(hardware.biosSerial):kind==='disk'?usableSerial(hardware.diskSerial):null;
+  if(!identifier)throw new Error('无法读取这台电脑的独立硬件标识，请联系管理员；机器码不会退回可能重复的旧算法');
+  const digest=crypto.createHash('sha256').update(`image-workbench-machine-v2\0${windowsGuid}\0${kind}\0${identifier}`).digest();
+  const code=encodeBase32(digest.subarray(0,10),16);
+  return `DP-M-${code.slice(0,4)}-${code.slice(4,8)}-${code.slice(8,12)}-${code.slice(12,16)}`;
+}
+
 async function currentMachineCode() {
   if (process.platform !== 'win32') throw new Error('机器授权目前仅支持 Windows');
-  const { stdout } = await execFileAsync('reg.exe',['query','HKLM\\SOFTWARE\\Microsoft\\Cryptography','/v','MachineGuid','/reg:64'],{windowsHide:true,timeout:10000});
+  const hardwareScript="$p=Get-CimInstance Win32_ComputerSystemProduct -ErrorAction SilentlyContinue; $b=Get-CimInstance Win32_BIOS -ErrorAction SilentlyContinue; $d=Get-CimInstance Win32_DiskDrive -ErrorAction SilentlyContinue | Select-Object -First 1; @{uuid=[string]$p.UUID;biosSerial=[string]$b.SerialNumber;diskSerial=[string]$d.SerialNumber} | ConvertTo-Json -Compress";
+  const [{stdout},{stdout:hardwareJson}]=await Promise.all([
+    execFileAsync('reg.exe',['query','HKLM\\SOFTWARE\\Microsoft\\Cryptography','/v','MachineGuid','/reg:64'],{windowsHide:true,timeout:10000}),
+    execFileAsync('powershell.exe',['-NoProfile','-NonInteractive','-Command',hardwareScript],{windowsHide:true,timeout:20000})
+  ]);
   const guid = /MachineGuid\s+REG_SZ\s+([0-9a-f-]+)/i.exec(stdout)?.[1];
   if (!guid) throw new Error('读取 Windows 机器码失败，请以正常用户权限重试');
-  return machineCodeFromGuid(guid);
+  let hardware;
+  try{hardware=JSON.parse(hardwareJson);}catch{throw new Error('读取电脑硬件标识失败，请联系管理员');}
+  return machineCodeFromHardware(guid,hardware);
 }
 
 function createLicenseKey() {
@@ -104,4 +129,4 @@ async function fetchRegistry(fetcher = networkFetch, {preferApi=false} = {}) {
 }
 
 module.exports = { REGISTRY_REPO, REGISTRY_BRANCH, REGISTRY_PATH, normalizeMachineCode, normalizeLicenseKey,
-  machineCodeFromGuid, currentMachineCode, createLicenseKey, hashCode, expiryForDate, validateRegistry, findLicense, fetchRegistry };
+  machineCodeFromGuid, machineCodeFromHardware, currentMachineCode, createLicenseKey, hashCode, expiryForDate, validateRegistry, findLicense, fetchRegistry };

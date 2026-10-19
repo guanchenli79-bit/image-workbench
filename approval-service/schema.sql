@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS applications (
   password_iv TEXT,
   machine_code TEXT NOT NULL,
   machine_hash TEXT NOT NULL,
+  machine_code_version INTEGER NOT NULL DEFAULT 1,
   device_id TEXT NOT NULL,
   secret_hash TEXT NOT NULL,
   status TEXT NOT NULL CHECK (status IN ('pending','approved','rejected','unbound','expired')),

@@ -25,6 +25,11 @@ const machineCode=value=>{
   if(!/^DPM[0-9A-HJKMNP-TV-Z]{16}$/.test(compact))throw new Error('机器标识无效');
   return `DP-M-${compact.slice(3,7)}-${compact.slice(7,11)}-${compact.slice(11,15)}-${compact.slice(15,19)}`;
 };
+const codeVersion=value=>{
+  const version=Number(value||1);
+  if(version!==1&&version!==2)throw Object.assign(new Error('机器码版本无效'),{status:400});
+  return version;
+};
 const publicStatus=row=>({id:row.id,status:row.status,name:row.name,expiresAt:row.expires_at,reason:row.rejection_reason||'',updatedAt:row.updated_at});
 function matchesConstantTime(left,right){
   const a=String(left||''),b=String(right||'');let difference=a.length^b.length;
@@ -44,8 +49,19 @@ async function deviceCredentials(request){
   const deviceId=request.headers.get('x-device-id')||'';
   const secret=/^Device ([A-Za-z0-9_-]{43})$/.exec(request.headers.get('authorization')||'')?.[1]||'';
   const code=machineCode(request.headers.get('x-machine-code'));
+  const version=codeVersion(request.headers.get('x-machine-code-version'));
   if(!/^[0-9a-f-]{36}$/.test(deviceId)||!secret)throw new Error('设备身份无效');
-  return {deviceId,secretHash:await digest(`image-workbench-device-v1\0${secret}`),machineHash:await digest(`image-workbench-machine-v1\0${code}`)};
+  return {deviceId,secretHash:await digest(`image-workbench-device-v1\0${secret}`),machineHash:await digest(`image-workbench-machine-v1\0${code}`),code,version};
+}
+async function migrateMachineCode(row,credentials,db){
+  const currentVersion=Number(row.machine_code_version||1);
+  if(row.machine_hash===credentials.machineHash&&currentVersion===credentials.version)return row;
+  if(credentials.version!==2)throw Object.assign(new Error('请将工作台更新到最新版后重试'),{status:409});
+  try{
+    await db.prepare('UPDATE applications SET machine_code=?,machine_hash=?,machine_code_version=2,updated_at=? WHERE id=? AND secret_hash=?')
+      .bind(credentials.code,credentials.machineHash,now(),row.id,credentials.secretHash).run();
+  }catch{throw Object.assign(new Error('新的硬件机器码与现有绑定冲突，请联系管理员'),{status:409});}
+  return {...row,machine_code:credentials.code,machine_hash:credentials.machineHash,machine_code_version:2};
 }
 async function requireAdmin(request,env){
   const token=/^Bearer ([A-Za-z0-9_-]{43})$/.exec(request.headers.get('authorization')||'')?.[1]||'';
@@ -58,6 +74,7 @@ async function apply(request,env){
   if(username.length<2||username.length>32||!/^[\p{L}\p{N}_.-]+$/u.test(username))return fail('用户名需为 2–32 个字，可用文字、数字、点、下划线或短横线');
   if(password.length<8||password.length>128||/[\u0000-\u001f]/.test(password))return fail('密码需为 8–128 个字符');
   const code=machineCode(input.machineCode);
+  const version=codeVersion(input.machineCodeVersion);
   const deviceId=String(input.deviceId||'');
   const secret=String(input.deviceSecret||'');
   if(!/^[0-9a-f-]{36}$/.test(deviceId)||!/^[A-Za-z0-9_-]{43}$/.test(secret))return fail('设备身份无效');
@@ -65,8 +82,9 @@ async function apply(request,env){
   const machineHash=await digest(`image-workbench-machine-v1\0${code}`);
   const usernameHash=await digest(`image-workbench-username-v1\0${usernameKey(username)}`);
   await expireOld(env.DB);
-  const latest=await env.DB.prepare('SELECT * FROM applications WHERE device_id=? ORDER BY created_at DESC LIMIT 1').bind(deviceId).first();
-  if(latest&&(!matchesConstantTime(latest.secret_hash,secretHash)||latest.machine_hash!==machineHash))return fail('设备身份与已有申请不符',403);
+  let latest=await env.DB.prepare('SELECT * FROM applications WHERE device_id=? ORDER BY created_at DESC LIMIT 1').bind(deviceId).first();
+  if(latest&&!matchesConstantTime(latest.secret_hash,secretHash))return fail('设备身份与已有申请不符',403);
+  if(latest)latest=await migrateMachineCode(latest,{code,machineHash:machineHash,version,secretHash},env.DB);
   if(latest&&['pending','approved'].includes(latest.status))return json(publicStatus(latest));
   const existing=await env.DB.prepare('SELECT password_cipher,password_iv FROM applications WHERE username_hash=? ORDER BY created_at DESC LIMIT 1').bind(usernameHash).first();
   if(existing){
@@ -78,16 +96,17 @@ async function apply(request,env){
   if(Number(recent?.count||0)>=5)return fail('今天申请次数已达上限，请明天再试',429);
   const timestamp=now(),id=crypto.randomUUID();
   const encrypted=await encryptPassword(password,env);
-  await env.DB.prepare("INSERT INTO applications(id,name,phone,phone_hash,username,username_hash,password_cipher,password_iv,machine_code,machine_hash,device_id,secret_hash,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,'pending',?,?)")
-    .bind(id,username,'',`username:${usernameHash}`,username,usernameHash,encrypted.cipher,encrypted.iv,code,machineHash,deviceId,secretHash,timestamp,timestamp).run();
+  await env.DB.prepare("INSERT INTO applications(id,name,phone,phone_hash,username,username_hash,password_cipher,password_iv,machine_code,machine_hash,machine_code_version,device_id,secret_hash,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,'pending',?,?)")
+    .bind(id,username,'',`username:${usernameHash}`,username,usernameHash,encrypted.cipher,encrypted.iv,code,machineHash,version,deviceId,secretHash,timestamp,timestamp).run();
   return json({id,status:'pending',name:username,expiresAt:null,reason:'',updatedAt:timestamp},201);
 }
 async function status(request,env){
   const credentials=await deviceCredentials(request);
   await expireOld(env.DB);
-  const row=await env.DB.prepare('SELECT * FROM applications WHERE device_id=? ORDER BY created_at DESC LIMIT 1').bind(credentials.deviceId).first();
+  let row=await env.DB.prepare('SELECT * FROM applications WHERE device_id=? ORDER BY created_at DESC LIMIT 1').bind(credentials.deviceId).first();
   if(!row)return json({status:'none'});
-  if(!matchesConstantTime(row.secret_hash,credentials.secretHash)||row.machine_hash!==credentials.machineHash)return fail('设备身份不匹配',403);
+  if(!matchesConstantTime(row.secret_hash,credentials.secretHash))return fail('设备身份不匹配',403);
+  row=await migrateMachineCode(row,credentials,env.DB);
   return json(publicStatus(row));
 }
 async function adminList(request,env){

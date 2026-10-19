@@ -1,6 +1,6 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const {machineCodeFromGuid,normalizeMachineCode,normalizeLicenseKey,createLicenseKey,hashCode,findLicense,validateRegistry}=require('../src/license.cjs');
+const {machineCodeFromGuid,machineCodeFromHardware,normalizeMachineCode,normalizeLicenseKey,createLicenseKey,hashCode,findLicense,validateRegistry}=require('../src/license.cjs');
 const {issueInRegistry,unbindInRegistry}=require('../src/admin-license.cjs');
 
 const machineA=machineCodeFromGuid('e13f815a-63ab-4c4a-af4f-3fbf707d1001');
@@ -11,6 +11,18 @@ test('机器码稳定、不同 Windows 标识不共用机器码',()=>{
   assert.equal(machineA,machineCodeFromGuid('E13F815A-63AB-4C4A-AF4F-3FBF707D1001'));
   assert.notEqual(machineA,machineB);
   assert.equal(normalizeMachineCode(machineA.toLowerCase()),machineA);
+});
+
+test('克隆的 Windows 标识在不同硬件上生成不同机器码',()=>{
+  const guid='e13f815a-63ab-4c4a-af4f-3fbf707d1001';
+  const first=machineCodeFromHardware(guid,{uuid:'11111111-2222-3333-4444-555555555555'});
+  const second=machineCodeFromHardware(guid,{uuid:'11111111-2222-3333-4444-555555555556'});
+  assert.notEqual(first,second);
+  assert.equal(first,machineCodeFromHardware(guid.toUpperCase(),{uuid:'11111111-2222-3333-4444-555555555555'}));
+  assert.notEqual(first,machineCodeFromGuid(guid));
+  assert.equal(normalizeMachineCode(first),first);
+  assert.throws(()=>machineCodeFromHardware(guid,{uuid:'00000000-0000-0000-0000-000000000000'}),/独立硬件标识/);
+  assert.match(machineCodeFromHardware(guid,{uuid:'00000000-0000-0000-0000-000000000000',biosSerial:'BIOS-123456'}),/^DP-M-/);
 });
 
 test('卡密格式固定，授权记录不存明文',()=>{
