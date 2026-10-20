@@ -22,6 +22,14 @@
       "path": "wallpapers/assets/wall-1ef9485e-8f52-474b-8e46-fe777a639df6.mp4",
       "sha256": "47e2335bd73e8cc67f9c83a03692336dbcaa6d3be8a6e25b79b7bef59d1b745e",
       "size": 24628337
+    },
+    {
+      "id": "wall-b9892c34-327b-4428-a9b7-f4e54da9486a",
+      "name": "【哲风壁纸】丝带-兔子-原创IP_2880x2160",
+      "kind": "video",
+      "path": "wallpapers/assets/wall-b9892c34-327b-4428-a9b7-f4e54da9486a.mp4",
+      "sha256": "44f1be8fb3f5ba82e47b95042c32b44ef1bde5cd376fcc5913d3c5cc90d6916e",
+      "size": 22420484
     }
   ]
 }
