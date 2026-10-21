@@ -1,4 +1,4 @@
-const {app,BrowserWindow,ipcMain,dialog,safeStorage,protocol,net,clipboard,nativeImage,Menu}=require('electron');
+const {app,BrowserWindow,ipcMain,dialog,safeStorage,protocol,net,clipboard,ClipboardItem,nativeImage,Menu}=require('electron');
 const {autoUpdater}=require('electron-updater');
 const fsp=require('node:fs/promises');
 const fs=require('node:fs');
@@ -185,8 +185,12 @@ async function copyImageRecord(id,index){
     source=nativeImage.createFromDataURL(pngUrl);
   }
   if(source.isEmpty())throw new Error('无法解码原图，请先使用“保存原文件”');
-  clipboard.writeImage(source);
-  const copied=clipboard.readImage();
+  const png=source.toPNG();
+  if(!png.length)throw new Error('无法转换原图为系统剪切板支持的 PNG 格式');
+  await clipboard.write([new ClipboardItem({'image/png':new Blob([png],{type:'image/png'})})]);
+  const entry=(await clipboard.read()).find(item=>item.types.includes('image/png'));
+  if(!entry)throw new Error('系统剪切板未收到图片，请重试或先保存原文件');
+  const copied=nativeImage.createFromBuffer(Buffer.from(await (await entry.getType('image/png')).arrayBuffer()));
   const size=source.getSize(),pastedSize=copied.getSize();
   if(copied.isEmpty()||size.width!==pastedSize.width||size.height!==pastedSize.height)
     throw new Error('系统剪切板未确认收到完整图片，请重试或先保存原文件');

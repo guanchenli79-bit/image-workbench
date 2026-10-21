@@ -1,6 +1,6 @@
 {
   "name": "image-workbench",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "private": true,
   "description": "雄霸AI多模态创作工作台",
   "main": "src/multimodal-main.cjs",
@@ -9,8 +9,12 @@
     "admin": "electron src/admin-main.cjs",
     "test": "node --test --test-isolation=none tests/*.test.cjs",
     "dist:win": "electron-builder --win nsis",
+    "postdist:win": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prune-local-releases.ps1",
+    "sync:desktop": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prune-local-releases.ps1 -SyncDesktop",
     "dist:admin": "electron-builder --config build/admin-builder.json --win nsis",
-    "release:win": "electron-builder --win nsis --publish always"
+    "postdist:admin": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prune-local-releases.ps1 -AdminOnly",
+    "release:win": "electron-builder --win nsis --publish always",
+    "postrelease:win": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prune-local-releases.ps1"
   },
   "dependencies": {
     "electron-updater": "6.8.9",
