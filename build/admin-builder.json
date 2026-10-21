@@ -1,7 +1,6 @@
 {
-  "npmRebuild": false,
   "appId": "ai.geeknow.imageworkbench.admin",
-  "productName": "雄霸AI使用审批管理",
+  "productName": "????????",
   "artifactName": "ImageWorkbenchAdmin-${version}-${arch}.${ext}",
   "extraMetadata": { "main": "src/admin-main.cjs" },
   "directories": { "output": "release-admin" },
@@ -23,5 +22,5 @@
   ],
   "asar": true,
   "win": { "icon": "assets/logo.ico", "target": [{ "target": "nsis", "arch": ["x64"] }] },
-  "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true, "createDesktopShortcut": true, "shortcutName": "雄霸AI使用审批管理" }
+  "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true, "createDesktopShortcut": true, "shortcutName": "????????" }
 }

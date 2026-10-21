@@ -1,33 +1,32 @@
 const path = require('node:path');
 const { Blob } = require('node:buffer');
 const { networkFetch } = require('./network.cjs');
-const { readChatResponse } = require('./chat-stream.cjs');
 const URL_REFERENCE_IMAGE_MODELS = new Set(['gpt-image-2','gpt-image-2-pro','gpt-image-2.5-flare','gpt-image-2.5-sunburst','gpt-image-2-vip']);
 
 function normalizeBase(value) {
   const raw = String(value || 'https://www.geeknow.top').trim().replace(/\/+$/, '');
   const url = new URL(raw);
-  if (!['https:', 'http:'].includes(url.protocol)) throw new Error('接口地址必须以 https:// 开头');
-  if (url.protocol === 'http:' && !['localhost','127.0.0.1','::1'].includes(url.hostname)) throw new Error('为保护 API Key，远程接口地址必须使用 HTTPS');
-  if (url.username || url.password || url.search || url.hash) throw new Error('接口地址请只填写基础 URL');
+  if (!['https:', 'http:'].includes(url.protocol)) throw new Error('??????? https:// ??');
+  if (url.protocol === 'http:' && !['localhost','127.0.0.1','::1'].includes(url.hostname)) throw new Error('??? API Key??????????? HTTPS');
+  if (url.username || url.password || url.search || url.hash) throw new Error('?????????? URL');
   if(/\/v1\/?$/.test(url.pathname))url.pathname=url.pathname.replace(/\/v1\/?$/,'')||'/';
   return url.href.replace(/\/+$/, '');
 }
 
 function errorText(data, status) {
   if(typeof data?.message==='string' && /<!doctype|<html|<body|<head/i.test(data.message))
-    return '接口网关返回了网页错误（HTTP '+status+'），请检查该端口的接口路径或稍后重试';
-  const raw = String(data?.error?.message || (typeof data?.error==='string'&&data.error) || data?.message || data?.description || `API 请求失败（HTTP ${status}）`);
+    return '????????????HTTP '+status+'??????????????????';
+  const raw = String(data?.error?.message || (typeof data?.error==='string'&&data.error) || data?.message || data?.description || `API ?????HTTP ${status}?`);
   if (/rejected by the safety system/i.test(raw)) {
     const requestId = /request ID\s+([\da-f-]{20,})/i.exec(raw)?.[1];
-    return `上游安全系统拒绝了这次生成。请检查并调整提示词或参考图；如果认为误判，请联系 Geeknow 客服${requestId ? `，附上请求 ID：${requestId}` : ''}。`;
+    return `?????????????????????????????????????? Geeknow ??${requestId ? `????? ID?${requestId}` : ''}?`;
   }
   return raw;
 }
 
 async function requestJson(settings, route, options = {}) {
   const base = normalizeBase(settings.baseUrl);
-  if (!settings.apiKey) throw new Error('请先设置 API Key');
+  if (!settings.apiKey) throw new Error('???? API Key');
   const url = base + route;
   const { allowTaskError = false, ...requestOptions } = options;
   const response = await networkFetch(url, {
@@ -49,28 +48,6 @@ async function requestJson(settings, route, options = {}) {
   return data;
 }
 
-async function requestChat(settings, modelId, messages, onUpdate) {
-  const url = normalizeBase(settings.baseUrl) + '/v1/chat/completions';
-  const response = await networkFetch(url, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${settings.apiKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: modelId, messages, stream: true }),
-    signal: AbortSignal.timeout(300000)
-  });
-  if (!response.ok) {
-    const raw = await response.text();
-    let payload;
-    try { payload = JSON.parse(raw); } catch { payload = { message: raw.slice(0,300) }; }
-    const message=errorText(payload,response.status);
-    if([400,422].includes(response.status)&&/stream|流式/i.test(message)){
-      const data=await requestJson(settings,'/v1/chat/completions',{method:'POST',body:JSON.stringify({model:modelId,messages,stream:false})});
-      return readChatResponse(new Response(JSON.stringify(data),{headers:{'content-type':'application/json'}}),onUpdate);
-    }
-    throw new Error(message);
-  }
-  return readChatResponse(response, onUpdate);
-}
-
 function imageItems(data) {
   if (Array.isArray(data?.results)) return data.results.map(x=>({url:typeof x==='string'?x:x?.url,mime:'image/png'})).filter(x=>x.url);
   if (Array.isArray(data?.data)) return data.data.map(x => ({ url:x.url, b64:x.b64_json, mime:'image/png' })).filter(x => x.url || x.b64);
@@ -81,7 +58,7 @@ function imageItems(data) {
 }
 
 function dataUri(ref) { return `data:${ref.mime};base64,${ref.buffer.toString('base64')}`; }
-const MIDJOURNEY_REQUEST_FAILED = 'Midjourney 上游处理这次生成请求失败（do_request_failed）。请尝试精简提示词、减少参考图；若持续出现，请将发生时间和错误码提交给 Geeknow 客服。';
+const MIDJOURNEY_REQUEST_FAILED = 'Midjourney ?????????????do_request_failed???????????????????????????????????? Geeknow ???';
 
 async function uploadMidjourneyReferences(settings, references) {
   const urls = [];
@@ -92,12 +69,12 @@ async function uploadMidjourneyReferences(settings, references) {
         method:'POST', body:JSON.stringify({mode:'FAST',base64Array:[dataUri(references[index])]})
       });
     } catch (error) {
-      throw new Error(`Midjourney 第 ${index + 1} 张参考图上传失败：${error.message}`, {cause:error});
+      throw new Error(`Midjourney ? ${index + 1} ?????????${error.message}`, {cause:error});
     }
     const result = data?.result;
     const url = Array.isArray(result) ? result[0] : null;
     if (![1,21,22].includes(Number(data?.code)) || typeof url !== 'string' || !/^https:\/\//i.test(url)) {
-      throw new Error(`Midjourney 第 ${index + 1} 张参考图上传失败：${errorText(data,200)}`);
+      throw new Error(`Midjourney ? ${index + 1} ?????????${errorText(data,200)}`);
     }
     urls.push(url);
   }
@@ -109,21 +86,21 @@ async function uploadReference(settings, ref) {
     method:'POST', body:JSON.stringify({file_name:path.basename(ref.name), content_type:ref.mime, expires_in:900})
   });
   const target = sign?.data;
-  if (!target?.upload_url || !target?.public_url) throw new Error('该 API 通道未返回素材上传地址，请检查上传服务是否可用');
+  if (!target?.upload_url || !target?.public_url) throw new Error('? API ???????????????????????');
   const uploadUrl = new URL(target.upload_url);
   const isSecureUrl = url => url.protocol === 'https:' || url.protocol === 'http:' && ['localhost','127.0.0.1','::1'].includes(url.hostname);
-  if (!isSecureUrl(uploadUrl)) throw new Error('素材上传地址未使用 HTTPS');
+  if (!isSecureUrl(uploadUrl)) throw new Error('????????? HTTPS');
   const response = await networkFetch(uploadUrl, {method:'PUT', headers:{'Content-Type':ref.mime}, body:ref.buffer, signal:AbortSignal.timeout(120000)});
-  if (!response.ok) throw new Error(`参考图上传失败（HTTP ${response.status}）`);
+  if (!response.ok) throw new Error(`????????HTTP ${response.status}?`);
   const publicUrl = new URL(target.public_url);
-  if (!isSecureUrl(publicUrl)) throw new Error('参考图公开地址未使用 HTTPS');
+  if (!isSecureUrl(publicUrl)) throw new Error('?????????? HTTPS');
   return publicUrl.href;
 }
 
 async function uploadReferences(settings, references, modelName) {
   return Promise.all(references.map(async(ref,index)=>{
     try { return await uploadReference(settings,ref); }
-    catch(error) { throw new Error(`${modelName} 第 ${index+1} 张参考图上传失败：${error.message}`,{cause:error}); }
+    catch(error) { throw new Error(`${modelName} ? ${index+1} ?????????${error.message}`,{cause:error}); }
   }));
 }
 
@@ -143,7 +120,7 @@ async function generateImage(settings, input, model, sizing, references) {
     const items=imageItems(data);
     if(items.length)return {kind:'complete',items};
     const taskId=data.id||data.task_id;
-    if(!taskId)throw new Error('Grsai 未返回任务 ID 或图片');
+    if(!taskId)throw new Error('Grsai ????? ID ???');
     return {kind:'task',taskId:String(taskId),taskAdapter:'grsai-image'};
   }
   if (model.adapter === 'gemini') {
@@ -152,7 +129,7 @@ async function generateImage(settings, input, model, sizing, references) {
       method:'POST', body:JSON.stringify({contents:[{role:'user',parts}],generationConfig:{responseModalities:['TEXT','IMAGE'],imageConfig:{aspectRatio:sizing.ratio,imageSize:sizing.resolution}}})
     });
     const items = imageItems(data);
-    if (!items.length) throw new Error('接口没有返回图片，请检查模型输出或通道状态');
+    if (!items.length) throw new Error('?????????????????????');
     return {kind:'complete',items};
   }
   if (model.adapter === 'midjourney') {
@@ -169,7 +146,7 @@ async function generateImage(settings, input, model, sizing, references) {
     if (![1,21,22].includes(Number(data.code)) || !data.result) {
       const detail = errorText(data,200);
       if (/do_request_failed/i.test(detail)) throw new Error(MIDJOURNEY_REQUEST_FAILED);
-      throw new Error(`Midjourney 提交失败（code ${data.code ?? '未知'}）：${detail}`);
+      throw new Error(`Midjourney ?????code ${data.code ?? '??'}??${detail}`);
     }
     return {kind:'task',taskId:String(data.result),taskAdapter:'midjourney'};
   }
@@ -181,7 +158,7 @@ async function generateImage(settings, input, model, sizing, references) {
     if (urls.length > 1) body.images = urls;
     const data = await requestJson(settings, '/v1/videos', {method:'POST',body:JSON.stringify(body)});
     const taskId = data.task_id || data.id;
-    if (!taskId) throw new Error('接口未返回任务 ID');
+    if (!taskId) throw new Error('??????? ID');
     return {kind:'task',taskId:String(taskId),taskAdapter:'video'};
   }
   if (model.adapter === 'legacy-images' && references.length) {
@@ -190,7 +167,7 @@ async function generateImage(settings, input, model, sizing, references) {
     for (const ref of references) form.append('image',new Blob([ref.buffer],{type:ref.mime}),ref.name);
     const data = await requestJson(settings,'/v1/images/edits',{method:'POST',body:form});
     const items = imageItems(data);
-    if (!items.length) throw new Error('接口没有返回图片');
+    if (!items.length) throw new Error('????????');
     return {kind:'complete',items};
   }
   if (URL_REFERENCE_IMAGE_MODELS.has(model.id) && references.length) {
@@ -201,7 +178,7 @@ async function generateImage(settings, input, model, sizing, references) {
     const items = imageItems(data);
     if (items.length) return {kind:'complete',items};
     const taskId = data.id || data.task_id || data.taskId;
-    if (!taskId) throw new Error('图像接口未返回任务 ID 或图片');
+    if (!taskId) throw new Error('????????? ID ???');
     return {kind:'task',taskId:String(taskId),taskAdapter:'image-async'};
   }
   const body = {model:model.id,prompt,n:1,size:sizing.size};
@@ -209,28 +186,11 @@ async function generateImage(settings, input, model, sizing, references) {
   if (model.adapter === 'legacy-images' && model.id.startsWith('dall-e-')) body.response_format = 'url';
   const data = await requestJson(settings,'/v1/images/generations',{method:'POST',body:JSON.stringify(body)});
   const items = imageItems(data);
-  if (!items.length) throw new Error('接口没有返回图片，请检查模型输出或通道状态');
+  if (!items.length) throw new Error('?????????????????????');
   return {kind:'complete',items};
 }
 
 async function generateVideo(settings, input, model, sizing, references) {
-  if(model.adapter==='grsai-video'){
-    const images=references.filter(ref=>ref.kind==='image');
-    const audios=references.filter(ref=>ref.kind==='audio');
-    if(images.length>model.maxImages||audios.length>model.maxAudios)throw new Error(`此模型最多支持 ${model.maxImages} 张参考图和 ${model.maxAudios} 段参考音频`);
-    const duration=Number(input.seconds)||model.seconds[0];
-    if(model.id==='minimax-h3'&&sizing.resolution==='1080p'&&duration>10)throw new Error('MiniMax H3 的 1080p 最长支持 10 秒');
-    const body={model:model.id,prompt:input.prompt,aspectRatio:model.id==='minimax-h3'?(sizing.ratio==='9:16'?'portrait':'landscape'):sizing.ratio,
-      resolution:sizing.resolution,duration,images:images.map(dataUri),audios:audios.map(dataUri),replyType:'async'};
-    const data=await requestJson(settings,'/v1/api/generate',{method:'POST',body:JSON.stringify(body),allowTaskError:true});
-    const status=String(data.status||'').toLowerCase();
-    if(['failed','violation','cancelled','canceled'].includes(status)||data.error)throw new Error(errorText(data,200));
-    const items=videoItems(data);
-    if(items.length)return {kind:'complete',items};
-    const taskId=data.id||data.task_id;
-    if(!taskId)throw new Error('Grsai 未返回视频任务 ID 或结果');
-    return {kind:'task',taskId:String(taskId),taskAdapter:'grsai-video'};
-  }
   const urls = await Promise.all(references.map(ref => uploadReference(settings,ref)));
   const body = {model:model.id,prompt:input.prompt};
   const sec = Number(input.seconds) || model.seconds[0];
@@ -245,26 +205,11 @@ async function generateVideo(settings, input, model, sizing, references) {
   else { body.seconds=String(sec); body.size=sizing.size; if(urls.length===1)body.input_reference=urls[0]; if(urls.length>1)body.input_reference=urls; }
   const data = await requestJson(settings,'/v1/videos',{method:'POST',body:JSON.stringify(body)});
   const taskId = data.task_id || data.id;
-  if (!taskId) throw new Error('接口未返回视频任务 ID');
+  if (!taskId) throw new Error('????????? ID');
   return {kind:'task',taskId:String(taskId),taskAdapter:'video'};
 }
 
-function videoItems(data){
-  const results=Array.isArray(data?.results)?data.results:[];
-  return results.map(item=>({url:typeof item==='string'?item:item?.url,mime:'video/mp4'})).filter(item=>typeof item.url==='string'&&/^https:\/\//i.test(item.url));
-}
-
 async function queryTask(settings, adapter, taskId, type) {
-  if(adapter==='grsai-video'){
-    const data=await requestJson(settings,'/v1/api/result?id='+encodeURIComponent(taskId),{allowTaskError:true});
-    const status=String(data.status||'').toLowerCase();
-    if(['failed','violation','cancelled','canceled'].includes(status))return {status:'failed',error:errorText(data,200)};
-    if(data.error)throw new Error(errorText(data,200));
-    const items=videoItems(data);
-    if(items.length)return {status:'complete',items};
-    if(status==='succeeded')throw new Error('Grsai 视频任务已完成，但未返回视频地址');
-    return {status:'pending',progress:Math.min(99,Math.max(0,parseInt(data.progress,10)||0))};
-  }
   if(adapter==='grsai-image'){
     const data=await requestJson(settings,'/v1/api/result?id='+encodeURIComponent(taskId),{allowTaskError:true});
     const status=String(data.status||'').toLowerCase();
@@ -272,13 +217,13 @@ async function queryTask(settings, adapter, taskId, type) {
     if(data.error)throw new Error(errorText(data,200));
     const items=imageItems(data);
     if(items.length)return {status:'complete',items};
-    if(status==='succeeded')throw new Error('Grsai 任务已完成，但接口没有返回图片');
+    if(status==='succeeded')throw new Error('Grsai ???????????????');
     return {status:'pending',progress:Math.min(99,Math.max(0,parseInt(data.progress,10)||0))};
   }
   if (adapter === 'midjourney') {
     const data = await requestJson(settings,`/mj/task/${encodeURIComponent(taskId)}/fetch`);
     const status = String(data.status || '').toUpperCase();
-    if (status === 'FAILURE' || status === 'CANCEL') return {status:'failed',error:data.failReason || data.description || 'Midjourney 任务失败'};
+    if (status === 'FAILURE' || status === 'CANCEL') return {status:'failed',error:data.failReason || data.description || 'Midjourney ????'};
     if (status !== 'SUCCESS') return {status:'pending',progress:parseInt(data.progress,10)||0};
     const urls = [data.imageUrl,...(data.imageUrls||[]).map(x=>typeof x==='string'?x:x.url)].filter(Boolean);
     if (!urls.length) urls.push(normalizeBase(settings.baseUrl)+`/mj/image/${encodeURIComponent(taskId)}`);
@@ -287,21 +232,21 @@ async function queryTask(settings, adapter, taskId, type) {
   if (adapter === 'image-async') {
     const data = await requestJson(settings,`/v1/images/generations/async/${encodeURIComponent(taskId)}`,{allowTaskError:true});
     const status = String(data.status || '').toLowerCase();
-    if (['failed','failure','cancelled','canceled'].includes(status)) return {status:'failed',error:data.error?.message || data.message || '图像生成任务失败'};
+    if (['failed','failure','cancelled','canceled'].includes(status)) return {status:'failed',error:data.error?.message || data.message || '????????'};
     if (data.error) throw new Error(errorText(data,200));
     const items = imageItems(data);
     if (items.length) return {status:'complete',items};
-    if (['completed','succeeded','success','finish','finished'].includes(status)) throw new Error('图像任务已完成，但接口没有返回图片');
+    if (['completed','succeeded','success','finish','finished'].includes(status)) throw new Error('?????????????????');
     return {status:'pending',progress:Math.min(99,Math.max(0,parseInt(data.progress,10)||0))};
   }
   const data = await requestJson(settings,`/v1/videos/${encodeURIComponent(taskId)}`);
   const status = String(data.status || '').toLowerCase();
-  if (['failed','failure','cancelled','canceled'].includes(status)) return {status:'failed',error:data.error?.message || data.message || '任务失败'};
+  if (['failed','failure','cancelled','canceled'].includes(status)) return {status:'failed',error:data.error?.message || data.message || '????'};
   if (!['completed','succeeded','success','finish','finished'].includes(status)) return {status:'pending',progress:Number(data.progress)||0};
   const urls = [data.video_url,...(data.output?.file_infos||[]).map(x=>x.file_url),...(data.data||[]).map(x=>x.url)].filter(Boolean);
   if (!urls.length && type === 'video') urls.push(normalizeBase(settings.baseUrl)+`/v1/videos/${encodeURIComponent(taskId)}/content`);
-  if (!urls.length) throw new Error('任务完成，但没有找到生成文件地址');
+  if (!urls.length) throw new Error('????????????????');
   return {status:'complete',items:urls.map(url=>({url,mime:type==='video'?'video/mp4':'image/png'}))};
 }
 
-module.exports = { normalizeBase, requestJson, requestChat, generateImage, generateVideo, queryTask };
+module.exports = { normalizeBase, requestJson, generateImage, generateVideo, queryTask };

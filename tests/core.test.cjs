@@ -8,23 +8,36 @@ const {normalizeBase,requestJson,generateImage,queryTask}=require('../src/api.cj
 const {recoverSubmittedMidjourney}=require('../src/recovery.cjs');
 const {releaseNotesText}=require('../src/update-notes.cjs');
 const {prepareReference}=require('../src/references.cjs');
+const {migrateMultimodalHistory}=require('../src/maintenance-migration.cjs');
 
-test('更新弹窗能展示多个版本的说明并清理 HTML 标记',()=>{
-  const notes=releaseNotesText([{version:'0.1.6',note:'<h2>新增</h2><ul><li>并行任务</li><li>图片放大</li></ul>'},{version:'0.1.5',note:'## 修复\n- Midjourney 参考图'}]);
-  assert.match(notes,/v0\.1\.6\n新增\n• 并行任务/);
-  assert.match(notes,/v0\.1\.5\n修复\n- Midjourney 参考图/);
+test('??AI??????????????????????',()=>{
+  const converted=migrateMultimodalHistory([
+    {id:'image-1',type:'image',status:'complete',prompt:'?',ratio:'16:9',localFiles:['image-1.png'],expiresAt:123},
+    {id:'text-1',type:'text',answer:'??',status:'complete'},
+    {id:'video-1',type:'video',status:'pending',taskId:'task-1',taskAdapter:'grsai',localFiles:[]}
+  ]);
+  assert.equal(converted.length,2);
+  assert.deepEqual(converted[0].files,['image-1.png']);
+  assert.equal(converted[0].actualRatio,'16:9');
+  assert.equal(converted[1].taskId,'task-1');
+});
+
+test('????????????????? HTML ??',()=>{
+  const notes=releaseNotesText([{version:'0.1.6',note:'<h2>??</h2><ul><li>????</li><li>????</li></ul>'},{version:'0.1.5',note:'## ??\n- Midjourney ???'}]);
+  assert.match(notes,/v0\.1\.6\n??\n? ????/);
+  assert.match(notes,/v0\.1\.5\n??\n- Midjourney ???/);
   assert.doesNotMatch(notes,/<[^>]+>/);
 });
 
-test('用户要求的 auto 和 13 个固定画幅全部存在',()=>{
+test('????? auto ? 13 ?????????',()=>{
   assert.deepEqual(presets.map(x=>x.dimensions),['auto','1024x1024','1672x941','941x1672','1443x1090','1090x1443','1536x1024','1024x1536','1408x1120','1120x1408','1920x832','832x1920','1792x896','896x1792']);
 });
-test('auto 优先参考图，其次提示词',()=>{
-  assert.equal(autoRatio('横版风景',{width:1000,height:1800}),'9:16');
-  assert.equal(autoRatio('电影感横屏',null),'16:9');
-  assert.equal(autoRatio('山水画',null),'1:1');
+test('auto ???????????',()=>{
+  assert.equal(autoRatio('????',{width:1000,height:1800}),'9:16');
+  assert.equal(autoRatio('?????',null),'16:9');
+  assert.equal(autoRatio('???',null),'1:1');
 });
-test('模型尺寸适配不提交其不支持的画幅',()=>{
+test('????????????????',()=>{
   const gpt=imageModels.find(x=>x.id==='gpt-image-2');
   const result=resolveSize(gpt,'5:4','',null);
   assert.equal(result.ratio,'4:3');
@@ -35,13 +48,13 @@ test('模型尺寸适配不提交其不支持的画幅',()=>{
   const pro=imageModels.find(x=>x.id==='gpt-image-2-pro');
   assert.equal(resolveSize(pro,'3:4','',null).size,'1536x2048');
 });
-test('分辨率只提供模型支持的档位，并真正改变提交尺寸',()=>{
+test('???????????????????????',()=>{
   const vip=imageModels.find(x=>x.id==='gpt-image-2-vip');
   assert.deepEqual(vip.resolutions,['1K','2K','4K']);
   assert.equal(resolveSize(vip,'16:9','',null,'1K').size,'1280x720');
   assert.equal(resolveSize(vip,'16:9','',null,'2K').size,'2560x1440');
   assert.equal(resolveSize(vip,'16:9','',null,'4K').size,'3840x2160');
-  assert.throws(()=>resolveSize(vip,'16:9','',null,'8K'),/不支持/);
+  assert.throws(()=>resolveSize(vip,'16:9','',null,'8K'),/???/);
   const pro=imageModels.find(x=>x.id==='gpt-image-2-pro');
   assert.deepEqual(pro.resolutions,['2K','4K']);
   assert.equal(resolveSize(pro,'1:1','',null,'4K').size,'2880x2880');
@@ -50,7 +63,7 @@ test('分辨率只提供模型支持的档位，并真正改变提交尺寸',()=
   assert.equal(resolveSize(gemini,'1:1','',null,'1K').resolution,'1K');
   assert.deepEqual(imageModels.find(x=>x.id==='midjourney').resolutions,['default']);
 });
-test('每个图像模型的可选分辨率与画幅都能解析为提交参数',()=>{
+test('????????????????????????',()=>{
   for (const model of imageModels) {
     for (const resolution of model.resolutions) {
       for (const ratio of model.ratios) {
@@ -63,7 +76,7 @@ test('每个图像模型的可选分辨率与画幅都能解析为提交参数',
     }
   }
 });
-test('Gemini 图像请求使用用户选中的分辨率',async()=>{
+test('Gemini ??????????????',async()=>{
   let submitted;
   const server=http.createServer(async(req,res)=>{
     submitted=JSON.parse(await new Promise(resolve=>{let body='';req.on('data',chunk=>body+=chunk);req.on('end',()=>resolve(body));}));
@@ -73,25 +86,25 @@ test('Gemini 图像请求使用用户选中的分辨率',async()=>{
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
   try{
     const model=imageModels.find(x=>x.id==='gemini-3-pro-image-preview');
-    await generateImage({baseUrl:`http://127.0.0.1:${server.address().port}`,apiKey:'test'},{prompt:'山水'},model,resolveSize(model,'16:9','',null,'1K'),[]);
+    await generateImage({baseUrl:`http://127.0.0.1:${server.address().port}`,apiKey:'test'},{prompt:'??'},model,resolveSize(model,'16:9','',null,'1K'),[]);
     assert.equal(submitted.generationConfig.imageConfig.imageSize,'1K');
     assert.equal(submitted.generationConfig.imageConfig.aspectRatio,'16:9');
   }finally{await new Promise(resolve=>server.close(resolve));}
 });
-test('API Key 用 Bearer 头发送到指定基础地址',async()=>{
+test('API Key ? Bearer ??????????',async()=>{
   const server=http.createServer((req,res)=>{assert.equal(req.url,'/v1/models');assert.equal(req.headers.authorization,'Bearer test-key');res.setHeader('Content-Type','application/json');res.end(JSON.stringify({object:'list',data:[]}));});
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
   try{const data=await requestJson({baseUrl:`http://127.0.0.1:${server.address().port}`,apiKey:'test-key'},'/v1/models');assert.equal(data.object,'list');}
   finally{await new Promise(resolve=>server.close(resolve));}
 });
-test('远程 HTTP 接口不可接收 API Key',()=>assert.throws(()=>normalizeBase('http://example.com'),/HTTPS/));
-test('参考图检查实际文件格式，避免把错误数据交给图像接口',()=>{
+test('?? HTTP ?????? API Key',()=>assert.throws(()=>normalizeBase('http://example.com'),/HTTPS/));
+test('?????????????????????????',()=>{
   const png=Buffer.from([137,80,78,71,13,10,26,10,0]);
   assert.equal(prepareReference('sample.PNG',png).mime,'image/png');
-  assert.throws(()=>prepareReference('sample.png',Buffer.from('not an image')),/不是有效/);
-  assert.throws(()=>prepareReference('sample.gif',png),/仅支持/);
+  assert.throws(()=>prepareReference('sample.png',Buffer.from('not an image')),/????/);
+  assert.throws(()=>prepareReference('sample.gif',png),/???/);
 });
-test('GPT Image 2 VIP 三张参考图先上传，再以原顺序的 URL 提交异步任务',async()=>{
+test('GPT Image 2 VIP ??????????????? URL ??????',async()=>{
   const uploads=[];let submitted;
   const server=http.createServer(async(req,res)=>{
     const chunks=[];for await(const chunk of req)chunks.push(chunk);
@@ -112,20 +125,20 @@ test('GPT Image 2 VIP 三张参考图先上传，再以原顺序的 URL 提交�
   try{
     const refs=[1,2,3].map(index=>({name:`ref-${index}.png`,mime:'image/png',buffer:Buffer.from(`image-${index}`)}));
     const result=await generateImage({baseUrl:`http://127.0.0.1:${server.address().port}`,apiKey:'test'},
-      {prompt:'参考这三张图'}, {id:'gpt-image-2-vip',adapter:'images'}, {size:'1024x1024'},refs);
+      {prompt:'??????'}, {id:'gpt-image-2-vip',adapter:'images'}, {size:'1024x1024'},refs);
     assert.deepEqual(result,{kind:'task',taskId:'vip-task-123',taskAdapter:'image-async'});
     assert.deepEqual(uploads.sort((a,b)=>a.index-b.index).map(item=>item.body),['image-1','image-2','image-3']);
     assert.deepEqual(submitted.image,[1,2,3].map(index=>`http://127.0.0.1:${server.address().port}/public/${index}`));
     assert.equal(submitted.model,'gpt-image-2-vip');
     assert.equal(submitted.size,'1024x1024');
     const other=await generateImage({baseUrl:`http://127.0.0.1:${server.address().port}`,apiKey:'test'},
-      {prompt:'参考图片'}, {id:'gpt-image-2',adapter:'images'}, {size:'1024x1024'},refs.slice(0,1));
+      {prompt:'????'}, {id:'gpt-image-2',adapter:'images'}, {size:'1024x1024'},refs.slice(0,1));
     assert.equal(other.taskAdapter,'image-async');
     assert.equal(submitted.model,'gpt-image-2');
     assert.equal(submitted.image.length,1);
   }finally{await new Promise(resolve=>server.close(resolve));}
 });
-test('异步生图查询识别百分比、无 status 的成品和失败原因',async()=>{
+test('????????????? status ????????',async()=>{
   let response={status:'in_progress',progress:'38%'};
   const server=http.createServer((req,res)=>{assert.equal(req.url,'/v1/images/generations/async/vip-task-123');res.setHeader('Content-Type','application/json');res.end(JSON.stringify(response));});
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
@@ -134,19 +147,19 @@ test('异步生图查询识别百分比、无 status 的成品和失败原因',a
     assert.deepEqual(await queryTask(settings,'image-async','vip-task-123','image'),{status:'pending',progress:38});
     response={data:[{url:'https://example.com/generated.png'}]};
     assert.deepEqual(await queryTask(settings,'image-async','vip-task-123','image'),{status:'complete',items:[{url:'https://example.com/generated.png',b64:undefined,mime:'image/png'}]});
-    response={status:'failed',error:{message:'上游生成失败'}};
-    assert.deepEqual(await queryTask(settings,'image-async','vip-task-123','image'),{status:'failed',error:'上游生成失败'});
+    response={status:'failed',error:{message:'??????'}};
+    assert.deepEqual(await queryTask(settings,'image-async','vip-task-123','image'),{status:'failed',error:'??????'});
   }finally{await new Promise(resolve=>server.close(resolve));}
 });
-test('Midjourney 的纯文本 JSON 提交成功响应会保留任务 ID',async()=>{
+test('Midjourney ???? JSON ??????????? ID',async()=>{
   const server=http.createServer((req,res)=>{res.setHeader('Content-Type','text/plain');res.end(JSON.stringify({code:1,description:'Submit success',result:'1792115316238633'}));});
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
   try {
-    const result=await generateImage({baseUrl:`http://127.0.0.1:${server.address().port}`,apiKey:'test'}, {prompt:'山海'}, {adapter:'midjourney'}, {ratio:'1:1'}, []);
+    const result=await generateImage({baseUrl:`http://127.0.0.1:${server.address().port}`,apiKey:'test'}, {prompt:'??'}, {adapter:'midjourney'}, {ratio:'1:1'}, []);
     assert.deepEqual(result,{kind:'task',taskId:'1792115316238633',taskAdapter:'midjourney'});
   } finally {await new Promise(resolve=>server.close(resolve));}
 });
-test('Midjourney 多张参考图先逐张上传，再用 URL 提交单次 Imagine',async()=>{
+test('Midjourney ????????????? URL ???? Imagine',async()=>{
   const uploads=[];let imagineCount=0;
   const server=http.createServer(async(req,res)=>{
     const chunks=[];for await(const chunk of req)chunks.push(chunk);
@@ -160,18 +173,18 @@ test('Midjourney 多张参考图先逐张上传，再用 URL 提交单次 Imagin
     }else if(req.url==='/mj/submit/imagine'){
       imagineCount++;
       assert.deepEqual(body.base64Array,[]);
-      assert.equal(body.prompt,'https://cdn.example.com/ref-1.png https://cdn.example.com/ref-2.png 描述 --ar 3:4');
+      assert.equal(body.prompt,'https://cdn.example.com/ref-1.png https://cdn.example.com/ref-2.png ?? --ar 3:4');
       res.end(JSON.stringify({code:1,result:'task-123'}));
     }else{res.statusCode=404;res.end('{}');}
   });
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
   try{
     const refs=[1,2].map(n=>({mime:'image/png',buffer:Buffer.from(`image-${n}`)}));
-    const result=await generateImage({baseUrl:`http://127.0.0.1:${server.address().port}`,apiKey:'test'},{prompt:'描述'},{adapter:'midjourney'},{ratio:'3:4'},refs);
+    const result=await generateImage({baseUrl:`http://127.0.0.1:${server.address().port}`,apiKey:'test'},{prompt:'??'},{adapter:'midjourney'},{ratio:'3:4'},refs);
     assert.equal(result.taskId,'task-123');assert.equal(uploads.length,2);assert.equal(imagineCount,1);
   }finally{await new Promise(resolve=>server.close(resolve));}
 });
-test('Midjourney 参考图上传失败时不提交 Imagine，也不自动重试',async()=>{
+test('Midjourney ??????????? Imagine???????',async()=>{
   let imagineCount=0;
   const server=http.createServer((req,res)=>{
     res.setHeader('Content-Type','application/json');
@@ -180,18 +193,18 @@ test('Midjourney 参考图上传失败时不提交 Imagine，也不自动重试'
   });
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
   try{
-    await assert.rejects(generateImage({baseUrl:`http://127.0.0.1:${server.address().port}`,apiKey:'test'},{prompt:'描述'},{adapter:'midjourney'},{ratio:'1:1'},[{mime:'image/png',buffer:Buffer.from('image')}]),/第 1 张参考图上传失败/);
+    await assert.rejects(generateImage({baseUrl:`http://127.0.0.1:${server.address().port}`,apiKey:'test'},{prompt:'??'},{adapter:'midjourney'},{ratio:'1:1'},[{mime:'image/png',buffer:Buffer.from('image')}]),/? 1 ????????/);
     assert.equal(imagineCount,0);
   }finally{await new Promise(resolve=>server.close(resolve));}
 });
-test('上游安全拒绝保留请求 ID，并提供可操作提示',async()=>{
+test('?????????? ID?????????',async()=>{
   const id='b42bb6e-3d87-4906-a3c3-4cc5757184ab';
   const server=http.createServer((req,res)=>{res.statusCode=400;res.setHeader('Content-Type','application/json');res.end(JSON.stringify({error:{message:`Your request was rejected by the safety system. If you believe this is an error, contact us at Azure support ticket and include the request ID ${id}.`}}));});
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
-  try{await assert.rejects(requestJson({baseUrl:`http://127.0.0.1:${server.address().port}`,apiKey:'test'},'/v1/images/generations'),error=>/上游安全系统拒绝/.test(error.message)&&error.message.includes(id));}
+  try{await assert.rejects(requestJson({baseUrl:`http://127.0.0.1:${server.address().port}`,apiKey:'test'},'/v1/images/generations'),error=>/????????/.test(error.message)&&error.message.includes(id));}
   finally{await new Promise(resolve=>server.close(resolve));}
 });
-test('Midjourney 任务查询可解析纯文本 JSON',async()=>{
+test('Midjourney ?????????? JSON',async()=>{
   const server=http.createServer((req,res)=>{res.setHeader('Content-Type','text/plain');res.end(JSON.stringify({status:'SUCCESS',imageUrl:'https://example.com/result.png'}));});
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
   try {
@@ -199,13 +212,13 @@ test('Midjourney 任务查询可解析纯文本 JSON',async()=>{
     assert.equal(result.status,'complete');assert.equal(result.items[0].url,'https://example.com/result.png');
   } finally {await new Promise(resolve=>server.close(resolve));}
 });
-test('误判失败的 Midjourney 提交可恢复为待查询任务',()=>{
+test('????? Midjourney ???????????',()=>{
   const records=[{status:'failed',modelId:'midjourney',error:JSON.stringify({code:1,description:'Submit success',result:'1792115316238633'})}];
   assert.equal(recoverSubmittedMidjourney(records),1);
   assert.equal(records[0].status,'pending');assert.equal(records[0].taskId,'1792115316238633');
   assert.equal(records[0].error,undefined);
 });
-test('请求会经过 HTTP_PROXY 指定的代理',async()=>{
+test('????? HTTP_PROXY ?????',async()=>{
   const target=http.createServer((req,res)=>{res.setHeader('Content-Type','application/json');res.end(JSON.stringify({data:[]}));});
   const proxy=http.createServer();
   let proxied=false;
@@ -233,19 +246,22 @@ test('请求会经过 HTTP_PROXY 指定的代理',async()=>{
     }
   } finally {proxy.closeAllConnections();target.closeAllConnections();await Promise.all([new Promise(resolve=>proxy.close(resolve)),new Promise(resolve=>target.close(resolve))]);}
 });
-test('桌面请求使用 Electron 网络栈以遵循系统代理和 VPN',async()=>{
+test('?????? Electron ?????? Windows ??? VPN',async()=>{
   const modulePath=require.resolve('../src/network.cjs');
   const electronPath=require.resolve('electron');
   const originalElectron=require.cache[electronPath];
-  const calls=[];
+  const previous=process.env.HTTPS_PROXY;
   try {
-    require.cache[electronPath]={id:electronPath,filename:electronPath,loaded:true,exports:{net:{fetch:async(url,options)=>{calls.push({url,options});return {status:200};}}}};
+    delete process.env.HTTPS_PROXY;
+    let requestedUrl='';
+    require.cache[electronPath]={id:electronPath,filename:electronPath,loaded:true,exports:{net:{fetch:async url=>{requestedUrl=url;return {status:200};}}}};
     delete require.cache[modulePath];
     const {networkFetch}=require('../src/network.cjs');
-    const result=await networkFetch('https://www.geeknow.top/v1/models',{method:'GET'});
-    assert.equal(result.status,200);
-    assert.deepEqual(calls,[{url:'https://www.geeknow.top/v1/models',options:{method:'GET'}}]);
+    const response=await networkFetch('https://www.geeknow.top/v1/models');
+    assert.equal(response.status,200);
+    assert.equal(requestedUrl,'https://www.geeknow.top/v1/models');
   } finally {
+    if(previous===undefined)delete process.env.HTTPS_PROXY;else process.env.HTTPS_PROXY=previous;
     if(originalElectron)require.cache[electronPath]=originalElectron;else delete require.cache[electronPath];
     delete require.cache[modulePath];
   }
