@@ -88,8 +88,8 @@ function updateTextAnswer(answer,r){
   body.hidden=!body.textContent&&r.status!=='failed';
 }
 function message(role,title,body){const box=document.createElement('article');box.className='message '+role;if(title){const meta=document.createElement('div');meta.className='meta';meta.textContent=title;box.append(meta);}const text=document.createElement('div');text.className='body';text.textContent=body;box.append(text);return box;}
-function addMedia(target,r){if(r.status!=='complete'||!r.media?.length)return;const div=document.createElement('div');div.className='result-media';r.media.forEach((url,i)=>{const media=document.createElement(r.type==='video'?'video':'img');media.src=url;if(r.type==='video'){media.controls=true;media.preload='metadata';}else media.addEventListener('dblclick',()=>showPreview(url));div.append(media);const actions=document.createElement('div');actions.className='result-actions';const save=document.createElement('button');save.textContent='保存原文件';save.addEventListener('click',()=>window.studio.saveResult(r.id,i).catch(e=>toast(e.message)));const cite=document.createElement('button');cite.textContent='引用参数';cite.title='将本次创作参数加入输入框';cite.addEventListener('click',()=>{state.mode=r.type;state.modelId=r.modelId;state.presetId=r.ratio||'auto';state.resolutionId=r.resolution||'default';if(r.seconds)state.seconds=r.seconds;renderControls();const lines=[`参考这次${r.type==='video'?'视频':'绘图'}创作：`,r.prompt,`模型：${r.modelName||r.modelId}`,`画幅比例：${r.ratio||'auto'}`,`分辨率：${r.resolution||'模型默认'}`];if(r.type==='video'&&r.seconds)lines.push(`时长：${r.seconds} 秒`);const prompt=$('prompt');prompt.value=[prompt.value.trim(),lines.join('\n')].filter(Boolean).join('\n\n');updateCount();prompt.focus();toast('已引用创作参数');});const copy=document.createElement('button');copy.textContent='复制提示词';copy.title='复制本次生成使用的提示词';copy.addEventListener('click',()=>window.studio.copyText(r.prompt).then(()=>toast('已复制提示词')).catch(e=>toast(e.message)));actions.append(save,cite,copy);div.append(actions);});target.append(div);}
-function renderHistory(){const host=$('historyList');host.replaceChildren();const records=state.history.filter(r=>r.type==='image'||r.type==='video');if(!records.length){const d=document.createElement('div');d.className='file-empty';d.textContent='还没有图片或视频生成记录';host.append(d);}for(const r of records){const card=document.createElement('article');card.className='history-card';const thumb=document.createElement(r.media?.length?(r.type==='video'?'video':'img'):'div');thumb.className='thumb';if(r.media?.length)thumb.src=r.media[0];else thumb.textContent=r.type==='video'?'▷':'▧';if(r.media?.length&&r.type==='image')thumb.addEventListener('dblclick',()=>showPreview(r.media[0]));const copy=document.createElement('div');copy.className='copy';const name=document.createElement('b');name.textContent=r.modelName;const p=document.createElement('p');p.textContent=r.prompt;const small=document.createElement('small');small.textContent=`${new Date(r.createdAt).toLocaleString()} · ${{complete:'已完成',failed:'失败',pending:'生成中',submitting:'提交中',expired:'已过期'}[r.status]||r.status}`;copy.append(name,p,small);if(r.media?.length){const b=document.createElement('button');b.textContent='保存';b.addEventListener('click',()=>window.studio.saveResult(r.id,0).catch(e=>toast(e.message)));copy.append(b);}card.append(thumb,copy);host.append(card);}}
+function addMedia(target,r){if(r.status!=='complete'||!r.media?.length)return;const div=document.createElement('div');div.className='result-media';r.media.forEach((url,i)=>{const media=document.createElement(r.type==='video'?'video':'img');media.src=url;if(r.type==='video'){media.controls=true;media.preload='metadata';}else media.addEventListener('dblclick',()=>showPreview(url));div.append(media);const actions=document.createElement('div');actions.className='result-actions';const save=document.createElement('button');save.textContent='保存原文件';save.addEventListener('click',()=>window.studio.saveResult(r.id,i).catch(e=>toast(e.message)));const cite=document.createElement('button');cite.textContent='引用参数';cite.title='将本次创作参数加入输入框';cite.addEventListener('click',()=>{state.mode=r.type;state.modelId=r.modelId;state.presetId=r.ratio||'auto';state.resolutionId=r.resolution||'default';if(r.seconds)state.seconds=r.seconds;renderControls();const lines=[`参考这次${r.type==='video'?'视频':'绘图'}创作：`,r.prompt,`模型：${r.modelName||r.modelId}`,`画幅比例：${r.ratio||'auto'}`,`分辨率：${r.resolution||'模型默认'}`];if(r.type==='video'&&r.seconds)lines.push(`时长：${r.seconds} 秒`);const prompt=$('prompt');prompt.value=[prompt.value.trim(),lines.join('\n')].filter(Boolean).join('\n\n');updateCount();prompt.focus();toast('已引用创作参数');});const copy=document.createElement('button');copy.textContent='复制提示词';copy.title='复制本次生成使用的提示词';copy.addEventListener('click',()=>window.studio.copyText(r.prompt).then(()=>toast('已复制提示词')).catch(e=>toast(e.message)));if(r.type==='image'){const copyImage=document.createElement('button');copyImage.textContent='复制图片';copyImage.title='复制完整原图到系统剪切板';copyImage.addEventListener('click',()=>window.studio.copyImage(r.id,i).then(({width,height})=>toast('已复制原图 '+width+' × '+height+'，可以粘贴')).catch(e=>toast(e.message)));actions.append(copyImage);}actions.append(save,cite,copy);div.append(actions);});target.append(div);}
+function renderHistory(){const host=$('historyList');host.replaceChildren();const records=state.history.filter(r=>r.type==='image'||r.type==='video');if(!records.length){const d=document.createElement('div');d.className='file-empty';d.textContent='还没有图片或视频生成记录';host.append(d);}for(const r of records){const card=document.createElement('article');card.className='history-card';const thumb=document.createElement(r.media?.length?(r.type==='video'?'video':'img'):'div');thumb.className='thumb';if(r.media?.length)thumb.src=r.media[0];else thumb.textContent=r.type==='video'?'▷':'▧';if(r.media?.length&&r.type==='image')thumb.addEventListener('dblclick',()=>showPreview(r.media[0]));const copy=document.createElement('div');copy.className='copy';const name=document.createElement('b');name.textContent=r.modelName;const p=document.createElement('p');p.textContent=r.prompt;const small=document.createElement('small');small.textContent=`${new Date(r.createdAt).toLocaleString()} · ${{complete:'已完成',failed:'失败',pending:'生成中',submitting:'提交中',expired:'已过期'}[r.status]||r.status}`;copy.append(name,p,small);if(r.media?.length){const b=document.createElement('button');b.textContent='保存';b.addEventListener('click',()=>window.studio.saveResult(r.id,0).catch(e=>toast(e.message)));copy.append(b);if(r.type==='image'){const copyImage=document.createElement('button');copyImage.textContent='复制图片';copyImage.addEventListener('click',()=>window.studio.copyImage(r.id,0).then(()=>toast('已复制原图，可以粘贴')).catch(e=>toast(e.message)));copy.append(copyImage);}}card.append(thumb,copy);host.append(card);}}
 function renderConversationList(){const host=$('conversationList');host.replaceChildren();const groups=new Map();for(const r of [...state.history].reverse()){const id=r.conversationId||r.id;if(!groups.has(id))groups.set(id,{id,title:r.prompt,latest:r.createdAt});else groups.get(id).latest=Math.max(groups.get(id).latest,r.createdAt);}const rows=[...groups.values()].sort((a,b)=>b.latest-a.latest);if(!rows.length){const empty=document.createElement('div');empty.className='conversation-empty';empty.textContent='暂无对话';host.append(empty);}for(const row of rows){const button=document.createElement('button');button.className='conversation-link'+(row.id===state.conversationId?' active':'');button.title=row.title;button.textContent=row.title.length>24?row.title.slice(0,24)+'…':row.title;const small=document.createElement('small');small.textContent=new Date(row.latest).toLocaleDateString();button.append(small);button.addEventListener('click',()=>{state.conversationId=row.id;state.activeRecordIds=new Set(state.history.filter(r=>(r.conversationId||r.id)===row.id).map(r=>r.id));setView('chat');});host.append(button);}}
 function renderHistoryAndConversation(){renderHistory();renderConversationList();if(state.view==='chat')renderConversation();}
 function setView(view){state.view=view;$('conversation').hidden=view!=='chat';$('historyView').hidden=view!=='history';$('composerWrap').hidden=view!=='chat';$('pageTitle').textContent=view==='chat'?'创作对话':'生成历史';$('chatNav').classList.toggle('active',view==='chat');$('historyNav').classList.toggle('active',view==='history');document.querySelector('.main').classList.toggle('empty-chat',view==='chat'&&!state.activeRecordIds.size);renderHistoryAndConversation();}
@@ -138,8 +138,52 @@ async function enterLicensedWorkspace(){
   $('gatewayKeyHint').textContent=state.settings.hasKey?`已保存此接口的 Key（尾号 ${state.settings.keyTail}），可留空直接进入。`:'首次进入请填写当前接口的 API Key。';
   $('activation').hidden=true;$('gateway').hidden=!!state.settings.hasKey;$('shell').hidden=!state.settings.hasKey;
 }
+function diagnosticRow(label,status,detail){
+  const host=$('diagnosticRows');
+  let row=[...host.children].find(item=>item.dataset.label===label);
+  if(!row){row=document.createElement('div');row.dataset.label=label;host.append(row);}
+  row.className=`diagnostic-row ${status||''}`;
+  row.replaceChildren();
+  const heading=document.createElement('strong');heading.textContent=label;
+  const description=document.createElement('small');description.textContent=detail||'';
+  row.append(heading,description);
+}
+async function checkConnection(){
+  const button=$('checkConnection');button.disabled=true;
+  $('diagnosticRows').replaceChildren();$('diagnosticSummary').textContent='正在检查接口地址、密钥格式和模型能力…';
+  if(!$('diagnosticDialog').open)$('diagnosticDialog').showModal();
+  try{
+    const report=await window.studio.diagnoseConnection({baseUrl:$('baseUrl').value,apiKey:$('apiKey').value});
+    $('baseUrl').value=report.baseUrl;
+    if(report.removedBearer&&$('apiKey').value)$('apiKey').value=$('apiKey').value.trim().replace(/^Bearer\s+/i,'').trim();
+    report.repairs.forEach((repair,index)=>diagnosticRow(`自动修复 ${index+1}`,'passed',repair));
+    diagnosticRow('模型列表',report.authVerified?'passed':'',`${report.modelCount} 个模型 · ${report.source}。${report.authVerified?'带 Key 的模型列表请求已成功；生成权限尚未验证':'列表可能来自公开页面；API Key 尚未验证'}`);
+    for(const scenario of report.scenarios){
+      const detail=scenario.status==='ready'?`已匹配路径：${scenario.modelName} · ${scenario.route}`:'当前端口没有已适配的此类模型';
+      diagnosticRow(scenario.label,'',detail);
+    }
+    $('diagnosticSummary').textContent=report.authVerified?'检查完成，模型列表链接通畅；已核对已知调用路径。未提交提示词或发起生成，生成权限及结果尚未验证。':'检查完成，已读取模型列表并核对已知调用路径；API Key 尚未验证。未提交提示词或发起生成。';
+  }catch(error){
+    $('diagnosticSummary').textContent=`检查出来连接错误：${error.message}。无法自动修复时，请检查 URL、API Key 与网络。`;
+    diagnosticRow('连接失败','failed',error.message);
+  }finally{button.disabled=false;}
+}
 function renderUpdate(data){
-  if(data.state==='checking'||data.state==='current')return;
+  const check=$('checkUpdateButton');
+  check.disabled=data.state==='checking';
+  check.textContent=data.state==='checking'?'检查中…':'检查更新';
+  if(data.state==='checking')return;
+  if(data.state==='current'){
+    if(state.manualUpdateCheck)toast('当前已是最新版本');
+    state.manualUpdateCheck=false;
+    return;
+  }
+  if(data.state==='error'){
+    if(state.manualUpdateCheck)toast(`检查更新失败：${data.message||'请稍后重试'}`);
+    state.manualUpdateCheck=false;
+    return;
+  }
+  state.manualUpdateCheck=false;
   const button=$('updateButton');button.hidden=false;
   const title=$('updateTitle'),action=$('updateAction');
   title.textContent=data.state==='ready'?'更新已下载':data.state==='downloading'?'正在下载更新':data.state==='error'?'检查更新失败':`发现雄霸AI ${data.version||''}`;
@@ -168,9 +212,13 @@ function bind(){for(const [b,m] of [['modeButton','modeMenu'],['modelButton','mo
   $('copyMachineCode').addEventListener('click',()=>window.studio.copyMachineCode().then(()=>toast('已复制机器码')).catch(error=>toast(error.message)));
   window.studio.onLicense(status=>{if(status.active&&$('activation').hidden===false)enterLicensedWorkspace().catch(error=>toast(error.message));else if(!status.active)showActivation(status);});
   window.studio.onWallpaper(applyWallpaper);window.studio.onUpdate(renderUpdate);
+  $('checkConnection').addEventListener('click',checkConnection);
+  $('closeDiagnostic').addEventListener('click',()=>$('diagnosticDialog').close());
+  $('diagnosticClose').addEventListener('click',()=>$('diagnosticDialog').close());
   const opacity=$('wallpaperOpacity');opacity.value=localStorage.getItem('xiongba-wallpaper-opacity')||'24';$('wallpaperLayer').style.opacity=String(Number(opacity.value)/100);
   opacity.addEventListener('input',()=>{$('wallpaperLayer').style.opacity=String(Number(opacity.value)/100);localStorage.setItem('xiongba-wallpaper-opacity',opacity.value);});
   $('wallpaperButton').addEventListener('click',()=>{opacity.focus();opacity.classList.add('attention');setTimeout(()=>opacity.classList.remove('attention'),900);});
+  $('checkUpdateButton').addEventListener('click',async()=>{state.manualUpdateCheck=true;const button=$('checkUpdateButton');button.disabled=true;button.textContent='检查中…';try{const result=await window.studio.checkUpdates();if(result?.message==='开发模式不检查更新'){state.manualUpdateCheck=false;button.disabled=false;button.textContent='检查更新';toast(result.message);}}catch(error){state.manualUpdateCheck=false;button.disabled=false;button.textContent='检查更新';toast(`检查更新失败：${error.message}`);}});
   $('updateButton').addEventListener('click',()=>$('updateDialog').showModal());$('closeUpdate').addEventListener('click',()=>$('updateDialog').close());$('updateLater').addEventListener('click',()=>$('updateDialog').close());$('updateDialog').addEventListener('close',()=>{state.dismissedUpdateVersion=state.update?.version;});
   $('updateAction').addEventListener('click',async()=>{try{if(state.update?.state==='available')await window.studio.downloadUpdate();else if(state.update?.state==='ready')await window.studio.installUpdate();else await window.studio.checkUpdates();}catch(error){toast(error.message);}});
 }

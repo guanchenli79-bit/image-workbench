@@ -291,6 +291,16 @@ dialog::backdrop { background: #2d241a88; }
 .dialog-head ~ label input:focus, .gateway-card input:focus { border-color: #cc785c; box-shadow: 0 0 0 3px #cc785c20; }
 .icon-button { background: #f1e9e0; color: #594b40; }
 #settingsMessage, #gatewayStatus { color: #b45440; }
+#checkConnection { margin-right: auto; }
+#diagnosticDialog { width: min(640px, calc(100vw - 32px)); }
+#diagnosticSummary { color: #665b50; font-size: 13px; line-height: 1.65; }
+#diagnosticRows { max-height: min(52vh, 480px); overflow-y: auto; display: grid; gap: 8px; }
+.diagnostic-row { border: 1px solid #e9ded3; border-radius: 12px; padding: 10px 12px; background: #fffaf5; font-size: 13px; line-height: 1.5; }
+.diagnostic-row strong { display: block; color: #3e352d; }
+.diagnostic-row small { color: #76695e; }
+.diagnostic-row.failed { border-color: #e4b8a7; background: #fff3ed; }
+.diagnostic-row.passed { border-color: #bfd8bd; background: #f5fbf4; }
+.diagnostic-cost { margin: 14px 0 0; color: #8a7667; font-size: 11px; line-height: 1.55; }
 #previewDialog { width: min(90vw, 1050px); }
 .preview-body { min-height: 80px; max-height: 75vh; overflow: auto; display: grid; place-items: center; }
 .preview-body img, .preview-body video { max-width: 100%; max-height: 74vh; object-fit: contain; border-radius: 10px; }

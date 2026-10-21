@@ -16,6 +16,7 @@ const {releaseNotesText}=require('./update-notes.cjs');
 const {currentMachineCode,normalizeLicenseKey,hashCode,findLicense,fetchRegistry}=require('./license.cjs');
 const {loadIdentity,submitApplication,getApplication}=require('./approval.cjs');
 const {fetchManifest,downloadWallpaper,sha256}=require('./wallpapers.cjs');
+const {cleanApiKey,planScenarios}=require('./diagnostics.cjs');
 
 const legacyDataPath=path.join(app.getPath('appData'),'image-workbench');
 fs.mkdirSync(legacyDataPath,{recursive:true});
@@ -170,14 +171,59 @@ async function generate(input,model,picked){
     return {id:record.id,conversationId};
   }catch(error){record.status='failed';record.error=error.message;await saveHistory();throw error;}
 }
-function createWindow(){window=new BrowserWindow({width:1450,height:900,minWidth:1040,minHeight:680,backgroundColor:'#f8f6f2',title:'雄霸AI',icon:path.join(__dirname,'..','assets','logo.ico'),autoHideMenuBar:true,webPreferences:{preload:path.join(__dirname,'multimodal-preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true}});window.loadFile(path.join(__dirname,'renderer','index.html'));window.webContents.on('context-menu',(_,p)=>{if(!licenseStatus().active||p.mediaType!=='image'||!p.srcURL.startsWith('preview-media://item/'))return;const url=new URL(p.srcURL);const [id,index]=url.pathname.split('/').filter(Boolean);Menu.buildFromTemplate([{label:'复制原图',click:async()=>{const r=history.find(x=>x.id===id);const name=r?.localFiles?.[Number(index)];if(!name)return;const img=nativeImage.createFromBuffer(await fsp.readFile(path.join(MEDIA,name)));clipboard.writeImage(img);emit('notice','已复制原图');}}]).popup({window});});}
+async function copyImageRecord(id,index){
+  requireLicense();
+  const record=history.find(item=>item.id===id&&item.type==='image'&&item.status==='complete'&&Date.now()<item.expiresAt);
+  const number=Number(index);
+  const name=Number.isInteger(number)&&number>=0?record?.localFiles?.[number]:null;
+  if(!name)throw new Error('图片已过期或不存在，请重新生成后再复制');
+  const bytes=await fsp.readFile(path.join(MEDIA,name));
+  let source=nativeImage.createFromBuffer(bytes);
+  if(source.isEmpty()&&path.extname(name).toLowerCase()==='.webp'){
+    const dataUrl=`data:image/webp;base64,${bytes.toString('base64')}`;
+    const pngUrl=await window.webContents.executeJavaScript(`new Promise((resolve,reject)=>{const image=new Image();image.onload=()=>{const canvas=document.createElement('canvas');canvas.width=image.naturalWidth;canvas.height=image.naturalHeight;canvas.getContext('2d').drawImage(image,0,0);resolve(canvas.toDataURL('image/png'));};image.onerror=()=>reject(new Error('无法解码 WebP 原图'));image.src=${JSON.stringify(dataUrl)};})`);
+    source=nativeImage.createFromDataURL(pngUrl);
+  }
+  if(source.isEmpty())throw new Error('无法解码原图，请先使用“保存原文件”');
+  clipboard.writeImage(source);
+  const copied=clipboard.readImage();
+  const size=source.getSize(),pastedSize=copied.getSize();
+  if(copied.isEmpty()||size.width!==pastedSize.width||size.height!==pastedSize.height)
+    throw new Error('系统剪切板未确认收到完整图片，请重试或先保存原文件');
+  return {width:size.width,height:size.height};
+}
+async function inspectConnection(input){
+  requireLicense();
+  const suppliedUrl=String(input?.baseUrl||settings.baseUrl).trim();
+  const baseUrl=normalizeBase(suppliedUrl);
+  const savedKey=profiles[baseUrl]?.apiKey||(baseUrl===settings.baseUrl?settings.apiKey:'');
+  const {token,removedBearer}=cleanApiKey(String(input?.apiKey||'').trim()||savedKey);
+  const repairs=[];
+  if(baseUrl!==suppliedUrl.replace(/\/+$/,''))repairs.push('检查出接口地址含多余路径；正在修复为基础地址');
+  if(removedBearer)repairs.push('检查出 API Key 含多余的 Bearer 前缀；正在修复输入格式');
+  const result=await syncModels({baseUrl,apiKey:token});
+  if(baseUrl===settings.baseUrl&&token===settings.apiKey){
+    const oldIds=models.map(item=>item.id).join('|');
+    if(oldIds!==result.models.map(item=>item.id).join('|')){
+      models=result.models;
+      syncInfo={status:'ok',source:result.source,at:Date.now(),provider:result.provider,authVerified:result.authVerified};
+      await saveSettings();
+      emit('models:changed',{models,syncInfo});
+      repairs.push('检查出本机模型列表已过期；正在修复并同步最新模型');
+    }
+  }
+  return {baseUrl,removedBearer,repairs,authVerified:result.authVerified,source:result.source,
+    modelCount:result.models.length,scenarios:planScenarios(result.models)};
+}
+function createWindow(){window=new BrowserWindow({width:1450,height:900,minWidth:1040,minHeight:680,backgroundColor:'#f8f6f2',title:'雄霸AI',icon:path.join(__dirname,'..','assets','logo.ico'),autoHideMenuBar:true,webPreferences:{preload:path.join(__dirname,'multimodal-preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true}});window.loadFile(path.join(__dirname,'renderer','index.html'));window.webContents.on('context-menu',(_,p)=>{if(!licenseStatus().active||p.mediaType!=='image'||!p.srcURL.startsWith('preview-media://item/'))return;const url=new URL(p.srcURL);const [id,index]=url.pathname.split('/').filter(Boolean);Menu.buildFromTemplate([{label:'复制原图',click:()=>copyImageRecord(id,index).then(({width,height})=>emit('notice',`已复制原图 ${width} × ${height}`)).catch(error=>emit('notice',error.message))}]).popup({window});});}
 function registerIpc(){
   ipcMain.handle('init',()=>({license:licenseStatus(),wallpaper:wallpaperDescriptor(),version:app.getVersion(),settings:publicSettings(),models:licenseStatus().active?models:[],syncInfo,history:licenseStatus().active?publicHistory():[],files:licenseStatus().active?[...files.values()].map(filePublic):[],presets}));
   ipcMain.handle('approval:submit',async(_,input)=>{if(!deviceIdentity||!machineCode)throw new Error(approvalReason||machineError||'设备身份不可用');approvalStatus=await submitApplication(deviceIdentity,machineCode,String(input?.username||'').trim(),String(input?.password||''));approvalCheckedAt=Date.now();emit('license:status',licenseStatus());return licenseStatus();});
   ipcMain.handle('approval:refresh',async()=>{await refreshApproval();return licenseStatus();});
   ipcMain.handle('license:copy-machine',()=>{if(!machineCode)throw new Error(machineError||'机器码不可用');clipboard.writeText(machineCode);return true;});
-  ipcMain.handle('settings:save',async(_,data)=>{requireLicense();const baseUrl=normalizeBase(data.baseUrl);const profile=profiles[baseUrl]||{};settings={baseUrl,apiKey:String(data.apiKey||'').trim()||profile.apiKey||''};models=profile.models||[];syncInfo=profile.syncInfo||{status:'idle',source:''};await saveSettings();try{return {settings:publicSettings(),...await doSync()};}catch(error){return {settings:publicSettings(),models,syncInfo,error:error.message};}});
+  ipcMain.handle('settings:save',async(_,data)=>{requireLicense();const baseUrl=normalizeBase(data.baseUrl);const profile=profiles[baseUrl]||{};const apiKey=cleanApiKey(String(data.apiKey||'').trim()||profile.apiKey||'').token;settings={baseUrl,apiKey};models=profile.models||[];syncInfo=profile.syncInfo||{status:'idle',source:''};await saveSettings();try{return {settings:publicSettings(),...await doSync()};}catch(error){return {settings:publicSettings(),models,syncInfo,error:error.message};}});
   ipcMain.handle('models:sync',async()=>{requireLicense();return doSync();});
+  ipcMain.handle('diagnostics:check',(_,input)=>inspectConnection(input));
   ipcMain.handle('files:choose',async()=>{requireLicense();const chosen=await dialog.showOpenDialog(window,{properties:['openFile','multiSelections'],filters:[{name:'参考文件',extensions:Object.keys(MIME).map(x=>x.slice(1))}]});if(chosen.canceled)return [];return Promise.all(chosen.filePaths.map(async p=>addFile(p,await fsp.readFile(p))));});
   ipcMain.handle('files:add',(_,items)=>{requireLicense();return Promise.all(items.map(x=>addFile(x.name,x.bytes)));});
   ipcMain.handle('files:remove',(_,id)=>{requireLicense();return files.delete(id);});
@@ -185,6 +231,7 @@ function registerIpc(){
   ipcMain.handle('submit',async(_,input)=>{requireLicense();if(!settings.apiKey)throw new Error('请先设置 API Key');const model=getModel(input.modelId);if(model.type!==input.type)throw new Error('模型与模式不匹配');const prompt=String(input.prompt||'').trim();if(!prompt)throw new Error('请输入内容');if(prompt.length>8000)throw new Error('内容不能超过 8000 字');const picked=selectedFiles(input.fileIds,model,input.referenceWeights);if(model.requiredRefs&&!picked.length)throw new Error('此模型需要参考文件');return model.type==='text'?chat({...input,prompt},model,picked):generate({...input,prompt},model,picked);});
   ipcMain.handle('history:list',()=>{requireLicense();return publicHistory();});
   ipcMain.handle('clipboard:write-text',(_,value)=>{requireLicense();clipboard.writeText(String(value||''));return true;});
+  ipcMain.handle('history:copy-image',(_,id,index)=>copyImageRecord(id,index));
   ipcMain.handle('history:save',async(_,id,index)=>{requireLicense();const r=history.find(x=>x.id===id);const name=r?.localFiles?.[index];if(!name)throw new Error('生成文件已过期');const chosen=await dialog.showSaveDialog(window,{defaultPath:name});if(chosen.canceled)return false;await fsp.copyFile(path.join(MEDIA,name),chosen.filePath);return true;});
   ipcMain.handle('history:clear',async()=>{requireLicense();const result=await dialog.showMessageBox(window,{type:'warning',message:'清空本机历史记录？',buttons:['取消','清空'],defaultId:0,cancelId:0});if(result.response!==1)return false;for(const r of history)for(const name of r.localFiles||[])await fsp.rm(path.join(MEDIA,name),{force:true});history=[];conversations={};await saveHistory();return true;});
   ipcMain.handle('updates:check',async()=>{if(!app.isPackaged)return {message:'开发模式不检查更新'};await autoUpdater.checkForUpdates();return {message:'正在检查更新'};});
