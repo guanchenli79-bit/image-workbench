@@ -33,4 +33,8 @@ npm run dist:admin
 
 用户安装包输出到 `release/`，管理端安装包输出到 `release-admin/`。管理端必须留在管理机。首次用管理员密码进入新版管理端时，Cloudflare 管理令牌会迁入本机密码加密管理库，随后删除临时明文文件；令牌不进入仓库或安装包。`approval-service/` 包含 Worker 和 D1 schema；部署需登录有权限的 Cloudflare 账号。
 
+## 版本保留规则
+
+保留画境工作台最后一版 `v0.1.17`，以及当前最新雄霸AI版本；壁纸素材库单独保留。新雄霸安装包构建成功后，`postdist:win` 会清理本机 `release/` 中的旧版本；运行 `npm run sync:desktop` 会同步当前安装包并清理桌面交付目录中的旧雄霸版本，不触碰“旧版备份”。发布到 GitHub 时，先确认新版安装包、`latest.yml`、源码包和管理端安装包完整可下载，再删除先前的雄霸 Release 与标签。不要在新版发布前删除旧版更新源。
+
 详细操作见 [使用说明.txt](使用说明.txt)。
