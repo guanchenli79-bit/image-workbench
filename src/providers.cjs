@@ -7,7 +7,7 @@ const GRS_GPT_RATIOS=[...GRS_RATIOS,'9:21','1:2','2:1'];
 function providerFor(baseUrl) {
   const host=new URL(baseUrl).hostname.toLowerCase();
   if(host==='grsaiapi.com'||host==='grsai.dakka.com.cn')return 'grsai';
-  if(host==='www.geeknow.top'||host==='geeknow.top')return 'geeknow';
+  if(['www.geeknow.top','geeknow.top','geeknow.ai','www.geeknow.ai'].includes(host))return 'geeknow';
   return 'openai-compatible';
 }
 
@@ -49,6 +49,15 @@ function grsaiSpec(entry) {
     return {id,label:id,family:'Grsai · Nano Banana',adapter:'grsai-image',grsaiFamily:'nano',refs:true,
       ratios:GRS_RATIOS,resolutions,description};
   }
+  return null;
+}
+
+function grsaiVideoSpec(entry) {
+  if(entry?.type!=='video'||entry.closeModel)return null;
+  const id=String(entry.name||'').trim();
+  const common={id,label:id,family:'Grsai · 视频',adapter:'grsai-video',refs:true,ratios:['16:9','9:16']};
+  if(id==='minimax-h3')return {...common,accept:['image','audio'],resolutions:['480p','768p','1080p'],seconds:[5,10,15],maxImages:9,maxAudios:3};
+  if(id==='agnes-video-2.5')return {...common,accept:['image','audio'],resolutions:['720p','1080p','2k'],seconds:[5,8,10,12],maxImages:5,maxAudios:3};
   return null;
 }
 
@@ -98,4 +107,4 @@ async function syncImageModels(settings,fetcher=networkFetch) {
   return {provider,...imageListFromModels(parsed,provider),source:'/v1/models'};
 }
 
-module.exports={providerFor,parseGrsaiPage,grsaiSpec,openAiSpec,imageListFromModels,syncImageModels};
+module.exports={providerFor,parseGrsaiPage,grsaiSpec,grsaiVideoSpec,openAiSpec,imageListFromModels,syncImageModels};

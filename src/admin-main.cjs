@@ -86,7 +86,7 @@ app.whenReady().then(()=>{
     return removeWallpaper(id);
   });
   ipcMain.handle('admin:copy',(event,value)=>{authorized(event);clipboard.writeText(String(value||''));return true;});
-  window=new BrowserWindow({width:1100,height:820,minWidth:850,minHeight:650,backgroundColor:'#eef2f8',title:'画境 · 使用审批管理',icon:path.join(__dirname,'..','assets','logo.ico'),autoHideMenuBar:true,
+  window=new BrowserWindow({width:1100,height:820,minWidth:850,minHeight:650,backgroundColor:'#eef2f8',title:'雄霸AI · 使用审批管理',icon:path.join(__dirname,'..','assets','logo.ico'),autoHideMenuBar:true,
     webPreferences:{preload:path.join(__dirname,'admin-preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true,backgroundThrottling:false}});
   window.webContents.on('will-navigate',event=>event.preventDefault());
   window.loadFile(path.join(__dirname,'admin-ui','index.html'));

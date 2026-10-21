@@ -233,20 +233,19 @@ test('请求会经过 HTTP_PROXY 指定的代理',async()=>{
     }
   } finally {proxy.closeAllConnections();target.closeAllConnections();await Promise.all([new Promise(resolve=>proxy.close(resolve)),new Promise(resolve=>target.close(resolve))]);}
 });
-test('桌面启动无代理环境变量时使用 Electron 系统代理解析器',async()=>{
+test('桌面请求使用 Electron 网络栈以遵循系统代理和 VPN',async()=>{
   const modulePath=require.resolve('../src/network.cjs');
   const electronPath=require.resolve('electron');
   const originalElectron=require.cache[electronPath];
-  const previous=process.env.HTTPS_PROXY;
+  const calls=[];
   try {
-    delete process.env.HTTPS_PROXY;
-    require.cache[electronPath]={id:electronPath,filename:electronPath,loaded:true,exports:{session:{defaultSession:{resolveProxy:async()=> 'PROXY 127.0.0.1:7897; DIRECT'}}}};
+    require.cache[electronPath]={id:electronPath,filename:electronPath,loaded:true,exports:{net:{fetch:async(url,options)=>{calls.push({url,options});return {status:200};}}}};
     delete require.cache[modulePath];
-    const {dispatcherFor}=require('../src/network.cjs');
-    const dispatcher=await dispatcherFor('https://www.geeknow.top/v1/models');
-    assert.equal(dispatcher.constructor.name,'ProxyAgent');
+    const {networkFetch}=require('../src/network.cjs');
+    const result=await networkFetch('https://www.geeknow.top/v1/models',{method:'GET'});
+    assert.equal(result.status,200);
+    assert.deepEqual(calls,[{url:'https://www.geeknow.top/v1/models',options:{method:'GET'}}]);
   } finally {
-    if(previous===undefined)delete process.env.HTTPS_PROXY;else process.env.HTTPS_PROXY=previous;
     if(originalElectron)require.cache[electronPath]=originalElectron;else delete require.cache[electronPath];
     delete require.cache[modulePath];
   }

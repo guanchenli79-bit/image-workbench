@@ -1,9 +1,9 @@
 {
   "name": "image-workbench",
-  "version": "0.1.17",
+  "version": "0.2.0",
   "private": true,
-  "description": "画境图像与视频创作工作台",
-  "main": "src/main.cjs",
+  "description": "雄霸AI多模态创作工作台",
+  "main": "src/multimodal-main.cjs",
   "scripts": {
     "start": "electron .",
     "admin": "electron src/admin-main.cjs",
@@ -14,6 +14,8 @@
   },
   "dependencies": {
     "electron-updater": "6.8.9",
+    "mammoth": "^1.11.0",
+    "pdf-parse": "^1.1.1",
     "undici": "7.30.0"
   },
   "devDependencies": {
@@ -22,8 +24,9 @@
     "wrangler": "^4.151.1"
   },
   "build": {
+    "npmRebuild": false,
     "appId": "ai.geeknow.imageworkbench",
-    "productName": "画境工作台",
+    "productName": "雄霸AI",
     "artifactName": "ImageWorkbench-${version}-${arch}.${ext}",
     "directories": {
       "output": "release"
@@ -54,7 +57,7 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "shortcutName": "画境工作台"
+      "shortcutName": "雄霸AI"
     },
     "publish": [
       {

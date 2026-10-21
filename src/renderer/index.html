@@ -1,97 +1,10 @@
-<!doctype html>
-<html lang="zh-CN">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: workbench-media: workbench-wallpaper:; media-src 'self' workbench-media: workbench-wallpaper:; style-src 'self'; script-src 'self'; connect-src 'self'">
-  <title>画境工作台</title>
-  <link rel="stylesheet" href="style.css">
-  <link rel="stylesheet" href="theme.css">
-  <link rel="stylesheet" href="activation.css">
-</head>
-<body>
-  <section id="activationScreen" class="activation-screen" aria-labelledby="activationTitle">
-    <video id="activationWallpaperVideo" class="activation-wallpaper" autoplay muted loop playsinline preload="metadata" poster="../../assets/activation-poster.jpg"><source id="activationWallpaperSource" src="../../assets/activation-wallpaper.mp4" type="video/mp4"></video>
-    <img id="activationWallpaperImage" class="activation-wallpaper" alt="" hidden>
-    <div class="activation-vignette"></div>
-    <div class="activation-brand"><img src="../../assets/logo.svg" alt=""><span>画境 <small>IMAGE WORKBENCH</small></span></div>
-    <div class="activation-card">
-      <span class="activation-eyebrow"><i></i> DEVICE ACCESS</span>
-      <h1 id="activationTitle">开启你的创作空间</h1>
-      <p class="activation-intro">填写用户名和密码提交申请。管理员批准后，这台电脑会自动进入工作台；更新软件不会解除绑定。</p>
-      <label for="machineCodeValue">当前机器码</label>
-      <div class="activation-machine"><code id="machineCodeValue">正在读取…</code><button type="button" id="copyMachineCode" aria-label="复制机器码">复制</button></div>
-      <form id="activationForm">
-        <label for="applicantUsername">用户名</label>
-        <input id="applicantUsername" type="text" autocomplete="username" minlength="2" maxlength="32" placeholder="请输入用户名" required>
-        <label for="applicantPassword">密码</label>
-        <input id="applicantPassword" type="password" autocomplete="new-password" minlength="8" maxlength="128" placeholder="至少 8 位密码" aria-describedby="activationMessage" required>
-        <button class="activation-submit" id="activationSubmit" type="submit">提交使用申请 <span>↗</span></button>
-      </form>
-      <p id="activationMessage" class="activation-message" role="status" aria-live="polite">正在准备机器码…</p>
-      <div class="activation-foot"><span>一人一机 · 管理员审批</span><span id="activationVersion">画境工作台</span></div>
-    </div>
-  </section>
-  <div id="workspaceWallpaper" class="workspace-wallpaper" aria-hidden="true" hidden>
-    <video id="workspaceWallpaperVideo" autoplay muted loop playsinline preload="metadata" poster="../../assets/activation-poster.jpg"><source id="workspaceWallpaperSource" src="../../assets/activation-wallpaper.mp4" type="video/mp4"></video>
-    <img id="workspaceWallpaperImage" alt="" hidden>
-  </div>
-  <div class="app-shell" hidden>
-    <header class="topbar">
-      <div class="brand"><img src="../../assets/logo.svg" alt="画境标识"><div><strong>画境</strong><small>IMAGE WORKBENCH</small></div></div>
-      <nav class="nav-list" aria-label="工作区">
-        <button class="nav-item active" data-view="image" type="button">图像生成</button>
-        <button class="nav-item" data-view="video" type="button">视频生成</button>
-        <button class="nav-item" data-view="history" type="button">全部历史</button>
-      </nav>
-      <div class="top-actions"><span class="connection" id="connectionPill"><i></i> 尚未连接 API</span><button class="update-button" id="updateButton" type="button" hidden>发现新版本</button><div class="wallpaper-control"><button class="wallpaper-toggle" id="wallpaperToggle" type="button" aria-expanded="false" aria-controls="wallpaperPopover">壁纸 <span id="wallpaperButtonValue">45%</span></button><div id="wallpaperPopover" class="wallpaper-popover" hidden><label for="wallpaperOpacity">壁纸不透明度 <output id="wallpaperOpacityValue" for="wallpaperOpacity">45%</output></label><input id="wallpaperOpacity" type="range" min="0" max="100" step="1" value="45"><p>调低可让页面更清晰；设置会保存在这台电脑。</p></div></div><button class="theme-toggle" id="themeToggle" type="button" aria-pressed="false">☾ 深色模式</button><button class="settings-button" id="settingsButton" type="button">设置 API Key <span>↗</span></button></div>
-    </header>
-
-    <div class="notice" role="note"><span class="notice-icon">!</span><strong>生成内容会在两小时后自动删除，请及时保存。</strong><span class="notice-detail">本机临时文件从完成时起计时</span></div>
-
-    <div class="workspace-grid">
-      <aside class="history-rail">
-        <div class="rail-heading"><div><span class="eyebrow">YOUR CREATIONS</span><h2>创作画布</h2></div><button id="allHistoryButton" type="button">查看全部 <span>↗</span></button></div>
-        <div class="result-caption"><span class="result-dot"></span>生成结果与最近历史</div>
-        <div class="recent-list" id="recentList"></div>
-        <div class="rail-footer"><span>完成后请及时保存到电脑</span><span id="versionLabel">v0.1.0</span></div>
-      </aside>
-
-      <main class="main-panel">
-        <section class="workspace-view" id="creationView">
-          <div class="panel-heading-main"><div><span class="eyebrow" id="breadcrumbCurrent">CREATE SOMETHING NEW</span><h1 id="formTitle">图像创作</h1></div><span class="panel-counter">01 / CREATE</span></div>
-          <section class="field-section reference-section"><div class="field-heading"><div><h3>参考图</h3><span class="hint" id="referenceHint">可选 · 支持多图</span></div><span class="optional-label">IMAGE INPUT</span></div>
-            <button class="dropzone" id="addReference" type="button"><span class="upload-mark">↑</span><strong>点击选择或拖入参考图片</strong><small>PNG、JPG、WEBP · 单张不超过 10 MB · 最多 10 张</small></button>
-            <div class="reference-list" id="referenceList"></div>
-          </section>
-          <section class="field-section"><div class="field-heading"><div><h3>选择模型</h3><span class="hint" id="modelCount"></span></div><button class="model-sync-button" id="syncModelsButton" type="button">同步模型 ↻</button></div>
-            <div class="model-select-wrap"><select id="modelSelect" aria-label="选择模型"></select><span class="select-caret">⌄</span></div>
-            <p class="field-note" id="modelSyncStatus"></p>
-            <div class="model-info"><span class="model-spark">✦</span><div><strong id="modelName"></strong><p id="modelDesc"></p></div><span id="modelFamily" class="model-tag"></span></div>
-          </section>
-          <section class="field-section"><div class="field-heading"><div><h3>画幅比例</h3><span class="hint">auto 自动识别画幅</span></div></div>
-            <div class="ratio-select-wrap"><select id="ratioGrid" aria-label="选择画幅比例"></select><span class="select-caret">⌄</span></div><p class="field-note" id="videoResolvedSize" hidden>实际提交尺寸：—</p>
-          </section>
-          <section class="field-section" id="resolutionSection"><div class="field-heading"><div><h3>分辨率</h3><span class="hint">高分辨率可能增加扣费</span></div></div>
-            <div class="ratio-select-wrap"><select id="resolutionSelect" aria-label="选择分辨率"></select><span class="select-caret">⌄</span></div><p class="field-note" id="resolvedSize">实际提交尺寸：—</p>
-          </section>
-          <section class="field-section prompt-section"><div class="field-heading"><div><h3>提示词</h3><span class="hint">描述内容、风格与细节</span></div><span id="promptCount">0 / 8000</span></div>
-            <div class="prompt-input-wrap"><textarea id="promptInput" maxlength="8000" placeholder="描述你想创作的画面……"></textarea><button id="expandPromptButton" class="prompt-expand-button" type="button" title="展开提示词输入框" aria-label="展开提示词输入框" aria-expanded="false">⤢</button></div>
-          </section>
-          <div class="action-bar"><div class="action-explain"><span class="action-dot"></span><span id="actionHint">准备就绪，开始创作你的图像</span></div><label id="secondsLabel" class="duration-control" hidden>时长 <select id="secondsSelect"></select> 秒</label><button class="generate-button" id="generateButton" type="button"><span>✦</span> 立即生成 <span class="button-arrow">↗</span></button></div>
-        </section>
-        <section class="workspace-view history-full" id="historyView" hidden><div class="panel-heading-main"><div><span class="eyebrow">YOUR CREATIONS</span><h1>生成历史</h1></div><button class="clear-history-button" id="clearHistoryButton" type="button">清空历史</button></div><p class="history-intro">所有任务都会记录在这里。生成文件两小时后自动清理。</p><div id="historyFullList" class="history-grid"></div></section>
-      </main>
-    </div>
-  </div>
-  <dialog id="settingsDialog" class="modal"><form method="dialog" id="settingsForm"><div class="modal-head"><div><span class="eyebrow">CONNECTION</span><h2 id="settingsTitle">连接图像 API</h2></div><button class="modal-close" id="closeSettingsDialog" type="button" aria-label="关闭">×</button></div><p class="modal-intro">每个接口地址分别保存自己的 API Key。切换地址后会自动同步可识别的生图模型。</p>
-    <label class="field-label" for="apiKeyInput">API Key</label><div class="password-wrap"><input id="apiKeyInput" type="password" autocomplete="off" placeholder="粘贴你的 API Key"><button type="button" id="toggleKey">显示</button></div><small id="keyStoredNote" class="input-note">还未设置 API Key</small>
-    <label class="field-label" for="baseUrlInput">接口地址</label><input id="baseUrlInput" type="url" value="https://www.geeknow.top" required><small class="input-note">例如 https://grsaiapi.com 或 https://www.geeknow.top。填写基础地址即可。</small>
-    <div class="modal-actions"><button type="button" class="ghost-button" id="clearKeyButton">清除 Key</button><div class="settings-actions"><button type="button" class="ghost-button" id="verifyKeyButton">测试连接</button><button type="submit" class="primary-button">保存设置</button></div></div>
-  </form></dialog>
-  <dialog id="updateDialog" class="modal update-modal" aria-labelledby="updateTitle"><div class="modal-head"><div><span class="eyebrow">APP UPDATE</span><h2 id="updateTitle">发现新版本</h2></div><button class="modal-close" id="closeUpdateDialog" type="button" aria-label="关闭">×</button></div><p class="modal-intro" id="updateDescription">新版本已经发布，你可以选择何时更新。</p><div class="update-notes"><strong>本次更新内容</strong><div id="updateNotesText">正在读取更新说明…</div></div><div class="modal-actions"><button type="button" class="ghost-button" id="updateLaterButton">稍后再说</button><button type="button" class="primary-button" id="updateActionButton">下载更新</button></div></dialog>
-  <dialog id="imagePreviewDialog" class="image-preview-dialog" aria-label="图片预览"><div class="image-preview-toolbar"><span id="imagePreviewTitle">图片预览</span><button id="closeImagePreview" type="button" aria-label="关闭图片预览">×</button></div><div class="image-preview-stage"><img id="imagePreview" alt="放大的图片"></div></dialog>
-  <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <script src="app.js"></script>
-</body>
-</html>
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: preview-media: workbench-wallpaper:; media-src 'self' preview-media: workbench-wallpaper:; style-src 'self'; script-src 'self'; connect-src 'self'"><title>雄霸AI</title><link rel="stylesheet" href="style.css"><link rel="stylesheet" href="refresh.css"></head>
+<body><div id="wallpaperLayer" class="wallpaper-layer"></div><section class="activation" id="activation" hidden><div class="activation-card"><div class="gateway-mark"><img src="../../assets/logo.svg" alt="雄霸AI"><span>雄霸AI <small>MULTIMODAL STUDIO</small></span></div><h1>申请使用</h1><p id="activationMessage">正在检查本机绑定状态…</p><div class="machine-line"><span>本机机器码</span><code id="machineCodeValue"></code><button id="copyMachineCode">复制</button></div><label>用户名<input id="approvalUsername" autocomplete="username" placeholder="输入你的用户名"></label><label>密码<input id="approvalPassword" type="password" autocomplete="new-password" placeholder="输入申请密码"></label><button class="gateway-enter" id="submitApplication">提交申请</button><button class="subtle" id="refreshApplication">刷新审批状态</button></div></section><section class="gateway" id="gateway" hidden><div class="gateway-glow"></div><div class="gateway-card"><div class="gateway-mark"><img src="../../assets/logo.svg" alt="雄霸AI"><span>雄霸AI <small>MULTIMODAL STUDIO</small></span></div><span class="eyebrow">CONNECT TO CREATE</span><h1>连接接口，开始创作</h1><p>输入接口基础地址与 API Key，雄霸AI会读取模型列表并进入工作台。</p><label>接口地址<input id="gatewayUrl" type="url" placeholder="https://grsaiapi.com"></label><label>API Key<input id="gatewayKey" type="password" autocomplete="off" placeholder="粘贴 API Key；已保存时可留空"></label><small id="gatewayKeyHint"></small><button class="gateway-enter" id="gatewayEnter">连接并进入 <span>↗</span></button><div id="gatewayStatus" role="status"></div></div></section><div class="shell" id="shell" hidden>
+  <aside class="sidebar"><div class="logo"><img src="../../assets/logo.svg" alt=""><div><b>雄霸AI</b><small>MULTIMODAL STUDIO</small></div><button id="collapseSidebar" title="收起侧边栏" aria-label="收起侧边栏">◧</button></div><button class="new-chat" id="newChat">＋ <span>新建对话</span></button><div class="side-title">工作区</div><button class="side-item active" id="chatNav">✦ <span>创作对话</span></button><button class="side-item" id="historyNav">◫ <span>生成历史</span></button><div class="side-title">历史对话</div><div class="conversation-list" id="conversationList"></div><div class="sidebar-bottom"><button id="settingsButton">⚙ <span>接口设置</span></button><div class="connection"><i></i><span id="connectionText">尚未连接 API</span></div></div></aside>
+  <main class="main"><header class="topbar"><div><span class="eyebrow">XIONGBA AI</span><h1 id="pageTitle">创作对话</h1></div><div class="top-actions"><span id="modelSummary" class="model-summary">等待同步模型</span><button id="wallpaperButton" class="subtle">壁纸透明度</button><input id="wallpaperOpacity" type="range" min="0" max="100" value="24" aria-label="壁纸不透明度"><button id="updateButton" class="subtle" hidden>发现新版本</button><button id="syncButton" class="subtle">↻ 同步模型</button></div></header>
+    <section class="conversation" id="conversation"><div class="welcome"><div class="welcome-icon">✧</div><span>ONE SPACE, MANY IDEAS</span><h2>让想法在这里继续生长</h2><p>选择语言、绘图或视频模式。键入 @ 引用左侧文件，然后开始创作。</p><div class="welcome-chips"><span>长对话上下文</span><span>图像与视频创作</span><span>按模型筛选参考文件</span></div></div></section>
+    <section class="history-view" id="historyView" hidden><div class="history-head"><div><h2>生成历史</h2><p>仅显示图片与视频任务。生成文件会在两小时后自动删除，请及时保存。</p></div><button id="clearHistory" class="subtle">清空全部历史</button></div><div id="historyList" class="history-list"></div></section>
+    <div class="composer-wrap" id="composerWrap"><div class="selected-files" id="selectedFiles"></div><div class="composer" id="composer"><div class="composer-top"><button class="add-file" id="addFile" title="添加参考文件"><span>＋</span><small>上传</small></button><textarea id="prompt" maxlength="8000" rows="3" placeholder="输入你的问题或创作提示词…输入 @ 引用文件"></textarea><button class="expand" id="expandPrompt" title="展开输入框">⤢</button></div><div id="mentionMenu" class="mention-menu popover" hidden></div><div class="toolbar"><div class="controls"><div class="control"><button class="pill" id="modeButton" aria-expanded="false"><span id="modeText">语言模型</span><span class="chevron">⌄</span></button><div class="popover option-menu" id="modeMenu" hidden></div></div><div class="control model-control"><button class="pill" id="modelButton" aria-expanded="false"><span id="modelText">选择模型</span><span class="chevron">⌄</span></button><div class="popover option-menu model-menu" id="modelMenu" hidden></div></div><div id="mediaControls" class="media-controls" hidden><div class="control"><button class="pill" id="ratioButton" aria-expanded="false"><span id="ratioText">auto 比例</span><span class="chevron">⌄</span></button><div class="popover option-menu" id="ratioMenu" hidden></div></div><div class="control"><button class="pill" id="resolutionButton" aria-expanded="false"><span id="resolutionText">模型默认</span><span class="chevron">⌄</span></button><div class="popover option-menu" id="resolutionMenu" hidden></div></div><div class="control" id="durationControl"><button class="pill" id="durationButton" aria-expanded="false"><span id="durationText">5 秒</span><span class="chevron">⌄</span></button><div class="popover option-menu" id="durationMenu" hidden></div></div></div></div><div class="send-group"><span id="charCount">0 / 8000</span><button class="send" id="sendButton" title="发送">↑</button></div></div></div><p class="composer-hint" id="capabilityHint">选择模型后可查看支持的文件与参数。</p></div>
+  </main></div>
+  <dialog id="settingsDialog"><div class="dialog-head"><div><span class="eyebrow">API CONNECTION</span><h2>连接你的接口</h2></div><button id="closeSettings" class="icon-button">×</button></div><p>输入基础 URL 和对应的 API Key。会自动读取模型列表，并匹配已确认的调用方式。</p><label>接口地址<input id="baseUrl" type="url" placeholder="https://grsaiapi.com"></label><label>API Key<input id="apiKey" type="password" autocomplete="off" placeholder="粘贴当前端口的 API Key"></label><div class="dialog-actions"><button id="cancelSettings" class="subtle">取消</button><button id="saveSettings" class="accent-button">保存并同步</button></div><small id="settingsMessage"></small></dialog>
+  <dialog id="previewDialog"><div class="dialog-head"><h2 id="previewTitle">文件预览</h2><button id="closePreview" class="icon-button">×</button></div><div id="previewBody" class="preview-body"></div></dialog><dialog id="updateDialog"><div class="dialog-head"><h2 id="updateTitle">发现新版本</h2><button id="closeUpdate" class="icon-button">×</button></div><p id="updateDescription">新版本已经发布，你可以选择何时更新。</p><div id="updateNotes" class="update-notes"></div><div class="dialog-actions"><button id="updateLater" class="subtle">稍后</button><button id="updateAction" class="accent-button">下载更新</button></div></dialog><div class="toast" id="toast"></div><script src="app.js"></script></body></html>

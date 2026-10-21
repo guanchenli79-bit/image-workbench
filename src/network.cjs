@@ -1,36 +1,40 @@
-const { EnvHttpProxyAgent, ProxyAgent, fetch } = require('undici');
+const { Agent, EnvHttpProxyAgent, fetch: undiciFetch } = require('undici');
 
-// Node fetch ignores Windows proxy settings. Use environment proxy settings when
-// provided, and Electron's Windows/PAC proxy resolver for desktop launches.
+// Electron's network stack follows Windows proxy, PAC and VPN settings,
+// including SOCKS proxies. Undici is retained for non-Electron tests/tools.
 const environmentDispatcher = new EnvHttpProxyAgent();
-const proxyDispatchers = new Map();
+const directDispatcher = new Agent();
 
-async function dispatcherFor(url) {
-  const protocol = new URL(url).protocol;
-  const configured = protocol === 'https:' ? process.env.HTTPS_PROXY || process.env.https_proxy
-    : process.env.HTTP_PROXY || process.env.http_proxy;
-  if (configured) return environmentDispatcher;
-  let electron;
-  try { electron = require('electron'); } catch { return environmentDispatcher; }
-  const resolveProxy = electron?.session?.defaultSession?.resolveProxy;
-  if (!resolveProxy) return environmentDispatcher;
-  const rule = (await resolveProxy.call(electron.session.defaultSession, String(url))).split(';')[0].trim();
-  const match = /^(PROXY|HTTPS)\s+(.+)$/i.exec(rule);
-  if (!match) return environmentDispatcher;
-  const proxyUrl = `${match[1].toUpperCase() === 'HTTPS' ? 'https' : 'http'}://${match[2]}`;
-  if (!proxyDispatchers.has(proxyUrl)) proxyDispatchers.set(proxyUrl, new ProxyAgent(proxyUrl));
-  return proxyDispatchers.get(proxyUrl);
+function proxyConnectionFailed(error) {
+  const detail = `${error?.message || ''} ${error?.cause?.message || ''} ${error?.cause?.code || ''}`;
+  return /ERR_PROXY_CONNECTION_FAILED|ERR_SOCKS_CONNECTION_FAILED|ERR_NO_SUPPORTED_PROXIES|ERR_TUNNEL_CONNECTION_FAILED/i.test(detail);
+}
+
+function desktopFetch() {
+  try {
+    const electron = require('electron');
+    if (typeof electron?.net?.fetch === 'function') return electron.net.fetch.bind(electron.net);
+  } catch {}
+  return null;
 }
 
 async function networkFetch(url, options = {}) {
+  const fetcher = desktopFetch();
   try {
-    return await fetch(url, { ...options, dispatcher: await dispatcherFor(url) });
+    return fetcher
+      ? await fetcher(url, options)
+      : await undiciFetch(url, { ...options, dispatcher: environmentDispatcher });
   } catch (error) {
-    if (error.name === 'AbortError' || error.name === 'TimeoutError') {
-      throw new Error('连接接口超时，请检查网络或代理设置', { cause: error });
+    if (fetcher && proxyConnectionFailed(error)) {
+      try { return await undiciFetch(url, { ...options, dispatcher: directDispatcher }); }
+      catch (directError) { throw new Error(`系统代理与直连均无法访问接口：${directError.message}`, { cause: directError }); }
     }
-    throw new Error('无法连接接口，请检查网络、系统代理及接口地址', { cause: error });
+    if (error.name === 'AbortError' || error.name === 'TimeoutError') {
+      throw new Error('连接接口超时，请稍后重试', { cause: error });
+    }
+    const detail = String(error?.message || error?.cause?.code || '连接失败');
+    throw new Error(`无法连接接口：${detail}`, { cause: error });
   }
 }
 
-module.exports = { networkFetch, dispatcherFor };
+module.exports = { networkFetch, desktopFetch, proxyConnectionFailed };

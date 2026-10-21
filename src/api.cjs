@@ -1,6 +1,7 @@
 const path = require('node:path');
 const { Blob } = require('node:buffer');
 const { networkFetch } = require('./network.cjs');
+const { readChatResponse } = require('./chat-stream.cjs');
 const URL_REFERENCE_IMAGE_MODELS = new Set(['gpt-image-2','gpt-image-2-pro','gpt-image-2.5-flare','gpt-image-2.5-sunburst','gpt-image-2-vip']);
 
 function normalizeBase(value) {
@@ -46,6 +47,28 @@ async function requestJson(settings, route, options = {}) {
   }
   if (!response.ok || data?.success === false || (data?.error && !allowTaskError)) throw new Error(errorText(data, response.status));
   return data;
+}
+
+async function requestChat(settings, modelId, messages, onUpdate) {
+  const url = normalizeBase(settings.baseUrl) + '/v1/chat/completions';
+  const response = await networkFetch(url, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${settings.apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model: modelId, messages, stream: true }),
+    signal: AbortSignal.timeout(300000)
+  });
+  if (!response.ok) {
+    const raw = await response.text();
+    let payload;
+    try { payload = JSON.parse(raw); } catch { payload = { message: raw.slice(0,300) }; }
+    const message=errorText(payload,response.status);
+    if([400,422].includes(response.status)&&/stream|流式/i.test(message)){
+      const data=await requestJson(settings,'/v1/chat/completions',{method:'POST',body:JSON.stringify({model:modelId,messages,stream:false})});
+      return readChatResponse(new Response(JSON.stringify(data),{headers:{'content-type':'application/json'}}),onUpdate);
+    }
+    throw new Error(message);
+  }
+  return readChatResponse(response, onUpdate);
 }
 
 function imageItems(data) {
@@ -191,6 +214,23 @@ async function generateImage(settings, input, model, sizing, references) {
 }
 
 async function generateVideo(settings, input, model, sizing, references) {
+  if(model.adapter==='grsai-video'){
+    const images=references.filter(ref=>ref.kind==='image');
+    const audios=references.filter(ref=>ref.kind==='audio');
+    if(images.length>model.maxImages||audios.length>model.maxAudios)throw new Error(`此模型最多支持 ${model.maxImages} 张参考图和 ${model.maxAudios} 段参考音频`);
+    const duration=Number(input.seconds)||model.seconds[0];
+    if(model.id==='minimax-h3'&&sizing.resolution==='1080p'&&duration>10)throw new Error('MiniMax H3 的 1080p 最长支持 10 秒');
+    const body={model:model.id,prompt:input.prompt,aspectRatio:model.id==='minimax-h3'?(sizing.ratio==='9:16'?'portrait':'landscape'):sizing.ratio,
+      resolution:sizing.resolution,duration,images:images.map(dataUri),audios:audios.map(dataUri),replyType:'async'};
+    const data=await requestJson(settings,'/v1/api/generate',{method:'POST',body:JSON.stringify(body),allowTaskError:true});
+    const status=String(data.status||'').toLowerCase();
+    if(['failed','violation','cancelled','canceled'].includes(status)||data.error)throw new Error(errorText(data,200));
+    const items=videoItems(data);
+    if(items.length)return {kind:'complete',items};
+    const taskId=data.id||data.task_id;
+    if(!taskId)throw new Error('Grsai 未返回视频任务 ID 或结果');
+    return {kind:'task',taskId:String(taskId),taskAdapter:'grsai-video'};
+  }
   const urls = await Promise.all(references.map(ref => uploadReference(settings,ref)));
   const body = {model:model.id,prompt:input.prompt};
   const sec = Number(input.seconds) || model.seconds[0];
@@ -209,7 +249,22 @@ async function generateVideo(settings, input, model, sizing, references) {
   return {kind:'task',taskId:String(taskId),taskAdapter:'video'};
 }
 
+function videoItems(data){
+  const results=Array.isArray(data?.results)?data.results:[];
+  return results.map(item=>({url:typeof item==='string'?item:item?.url,mime:'video/mp4'})).filter(item=>typeof item.url==='string'&&/^https:\/\//i.test(item.url));
+}
+
 async function queryTask(settings, adapter, taskId, type) {
+  if(adapter==='grsai-video'){
+    const data=await requestJson(settings,'/v1/api/result?id='+encodeURIComponent(taskId),{allowTaskError:true});
+    const status=String(data.status||'').toLowerCase();
+    if(['failed','violation','cancelled','canceled'].includes(status))return {status:'failed',error:errorText(data,200)};
+    if(data.error)throw new Error(errorText(data,200));
+    const items=videoItems(data);
+    if(items.length)return {status:'complete',items};
+    if(status==='succeeded')throw new Error('Grsai 视频任务已完成，但未返回视频地址');
+    return {status:'pending',progress:Math.min(99,Math.max(0,parseInt(data.progress,10)||0))};
+  }
   if(adapter==='grsai-image'){
     const data=await requestJson(settings,'/v1/api/result?id='+encodeURIComponent(taskId),{allowTaskError:true});
     const status=String(data.status||'').toLowerCase();
@@ -249,4 +304,4 @@ async function queryTask(settings, adapter, taskId, type) {
   return {status:'complete',items:urls.map(url=>({url,mime:type==='video'?'video/mp4':'image/png'}))};
 }
 
-module.exports = { normalizeBase, requestJson, generateImage, generateVideo, queryTask };
+module.exports = { normalizeBase, requestJson, requestChat, generateImage, generateVideo, queryTask };
