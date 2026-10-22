@@ -299,13 +299,96 @@ function statusLabel(record){return {submitting:'???',pending:Number(record.prog
 function showImagePreview(src,alt,kind='????'){const dialog=$('imagePreviewDialog');$('imagePreview').src=src;$('imagePreview').alt=alt||kind;$('imagePreviewTitle').textContent=`${kind} ? ${alt||'????'}`;if(!dialog.open)dialog.showModal();}
 function mediaElement(record,index=0){if(record.status!=='complete'||!record.media?.[index])return null;const el=document.createElement(record.type==='video'?'video':'img');el.src=record.media[index];if(record.type==='video'){el.controls=true;el.preload='metadata';}else{el.alt=record.prompt;el.classList.add('zoomable-image');el.title='??????';el.addEventListener('dblclick',()=>showImagePreview(el.src,el.alt));}return el;}
 function progressElement(record){if(!['submitting','pending','complete'].includes(record.status))return null;const progress=Number(record.progress);const known=record.status==='complete'||(record.status==='pending'&&Number.isFinite(progress)&&progress>0);const percent=record.status==='complete'?100:known?Math.min(99,Math.max(1,Math.round(progress))):0;const box=document.createElement('div');box.className=`task-progress${known?'':' task-progress-indeterminate'}${record.status==='complete'?' task-progress-complete':''}`;box.setAttribute('role','progressbar');box.setAttribute('aria-label',record.type==='video'?'??????':'??????');if(known)box.setAttribute('aria-valuenow',String(percent));box.setAttribute('aria-valuemin','0');box.setAttribute('aria-valuemax','100');const label=document.createElement('div');label.className='task-progress-label';label.innerHTML=`<span>${record.status==='complete'?'????':record.status==='submitting'?'????':'????'}</span><span>${known?`${percent}%`:'???'}</span>`;const track=document.createElement('div');track.className='task-progress-track';const fill=document.createElement('span');fill.className='task-progress-fill';if(known)fill.style.width=`${percent}%`;track.append(fill);box.append(label,track);return box;}
-function renderRecentCard(record){const card=document.createElement('article');card.className='recent-card';const thumb=document.createElement('div');thumb.className='recent-thumb';const media=mediaElement(record);if(media)thumb.append(media);else{const p=document.createElement('span');p.className='thumb-placeholder';p.textContent=record.type==='video'?'?':'?';thumb.append(p);}const status=document.createElement('span');status.className='recent-status';status.textContent=statusLabel(record);thumb.append(status);
-  const meta=document.createElement('div');meta.className='recent-meta';const title=document.createElement('strong');title.textContent=record.prompt;const small=document.createElement('small');small.textContent=`${record.modelName} ? ${formatDate(record.createdAt)}`;meta.append(title,small);
+function recordActionIcon(kind){
+  const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+  svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('aria-hidden','true');
+  svg.setAttribute('fill','none');svg.setAttribute('stroke','currentColor');
+  svg.setAttribute('stroke-width','1.8');svg.setAttribute('stroke-linecap','round');svg.setAttribute('stroke-linejoin','round');
+  const path=document.createElementNS('http://www.w3.org/2000/svg','path');
+  path.setAttribute('d',kind==='copy'?'M8 7h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2Zm8 0V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h1':'M4 11V7a3 3 0 0 1 3-3h3v5H7v2a3 3 0 0 1-3 3Zm10 0V7a3 3 0 0 1 3-3h3v5h-3v2a3 3 0 0 1-3 3Z');
+  svg.append(path);return svg;
+}
+function recordButton(label,kind,action){
+  const button=document.createElement('button');button.type='button';button.className='record-action-button';
+  button.title=kind==='quote'?'????????????':'??????????';
+  button.setAttribute('aria-label',button.title);
+  button.append(recordActionIcon(kind),document.createTextNode(label));
+  button.addEventListener('click',async()=>{button.disabled=true;try{await action();}catch(error){toast(error.message||'????');}finally{button.disabled=false;}});
+  return button;
+}
+function recordActions(record,saveLabel){
+  const actions=document.createElement('div');actions.className='record-actions';
+  if(record.status==='complete')record.media?.forEach((_,i)=>{
+    const button=document.createElement('button');button.type='button';button.textContent=record.media.length>1?`${saveLabel} ${i+1}`:saveLabel;
+    button.addEventListener('click',()=>saveMedia(record,i));actions.append(button);
+  });
+  if(record.prompt){
+    const end=document.createElement('div');end.className='record-actions-end';
+    end.append(recordButton('??','quote',()=>quoteRecord(record)),recordButton('??','copy',async()=>{await window.workbench.copyPrompt(record.id);toast('??????????');}));
+    actions.append(end);
+  }
+  return actions;
+}
+async function quoteRecord(record){
+  const prompt=String(record.prompt||'');
+  if(!prompt.trim())throw new Error('?????????????');
+  $('promptInput').value=prompt;
+  $('promptCount').textContent=`${prompt.length} / 8000`;
+  if(record.baseUrl&&record.baseUrl!==state.settings.baseUrl){
+    const snapshot=await window.workbench.saveSettings({baseUrl:record.baseUrl});
+    applyModelSnapshot(snapshot);
+  }
+  const type=record.type==='video'?'video':'image';
+  const available=type==='video'?state.videoModels:state.imageModels;
+  if(!available.length){toast('???????????????????? API ??');return;}
+  setView(type);
+  const model=currentModels().find(item=>item.id===record.modelId);
+  if(model){
+    state.modelId=model.id;
+    const selection=resolveRecordParams(record,model,state.presets);
+    state.presetId=selection.ratio;
+    if(type==='image')state.resolutionsByModel[model.id]=selection.resolution;
+    renderModels();renderRatios();
+    if(type==='video'&&selection.seconds)$('secondsSelect').value=selection.seconds;
+    toast('???????????');
+  }else toast('?????????????????????? API ??');
+  updateSizeNote();
+  $('promptInput').scrollIntoView({behavior:'smooth',block:'center'});
+  $('promptInput').focus({preventScroll:true});
+}
+function renderRecentCard(record){
+  const card=document.createElement('article');card.className='recent-card';
+  const thumb=document.createElement('div');thumb.className='recent-thumb';const media=mediaElement(record);
+  if(media)thumb.append(media);else{const placeholder=document.createElement('span');placeholder.className='thumb-placeholder';placeholder.textContent=record.type==='video'?'?':'?';thumb.append(placeholder);}
+  const status=document.createElement('span');status.className='recent-status';status.textContent=statusLabel(record);thumb.append(status);
+  const meta=document.createElement('div');meta.className='recent-meta';
+  const title=document.createElement('strong');title.textContent=record.prompt;
+  const small=document.createElement('small');small.textContent=`${record.modelName} ? ${formatDate(record.createdAt)}`;meta.append(title,small);
   const progress=progressElement(record);if(progress)meta.append(progress);
-  if(record.status==='complete'){const actions=document.createElement('div');actions.className='recent-actions';record.media.forEach((_,i)=>{const b=document.createElement('button');b.textContent=record.media.length>1?`??? ${i+1} ?`:'????';b.addEventListener('click',()=>saveMedia(record,i));actions.append(b);});meta.append(actions);}else if(record.status==='failed'){const error=document.createElement('small');error.textContent=record.error||record.lastPollError||'????';meta.append(error);}else if(record.status==='expired'){const expired=document.createElement('small');expired.textContent='?????????';meta.append(expired);}card.append(thumb,meta);return card;}
-function renderHistory(){const recent=$('recentList');const full=$('historyFullList');$('clearHistoryButton').disabled=!state.history.length;recent.replaceChildren();full.replaceChildren();if(!state.history.length){const empty=document.createElement('div');empty.className='empty-history';const s=document.createElement('span');s.textContent='?';empty.append(s,document.createTextNode('?????\n????????'));recent.append(empty);const clone=empty.cloneNode(true);full.append(clone);return;}
-  state.history.slice(0,8).forEach(r=>recent.append(renderRecentCard(r)));
-  for(const r of state.history){const card=document.createElement('article');card.className='history-card';const preview=document.createElement('div');preview.className='history-preview';const media=mediaElement(r);if(media)preview.append(media);else{const p=document.createElement('span');p.className='thumb-placeholder';p.textContent=r.status==='expired'?'?':r.type==='video'?'?':'?';preview.append(p);}const copy=document.createElement('div');copy.className='history-copy';const h=document.createElement('h3');h.textContent=r.modelName;const p=document.createElement('p');p.textContent=r.prompt;const small=document.createElement('small');small.textContent=`${formatDate(r.createdAt)} ? ${statusLabel(r)}${r.actualSize?' ? '+r.actualSize:''}`;copy.append(h,p,small);const progress=progressElement(r);if(progress)copy.append(progress);if(r.status==='complete'){r.media.forEach((_,i)=>{const b=document.createElement('button');b.textContent=r.media.length>1?`?? ${i+1}`:'????';b.addEventListener('click',()=>saveMedia(r,i));copy.append(b);});}if(r.status==='failed'){const err=document.createElement('p');err.textContent=r.error||r.lastPollError||'';copy.append(err);}card.append(preview,copy);full.append(card);}
+  if(record.status==='failed'){const error=document.createElement('small');error.textContent=record.error||record.lastPollError||'????';meta.append(error);}
+  if(record.status==='expired'){const expired=document.createElement('small');expired.textContent='?????????';meta.append(expired);}
+  if(record.prompt||record.status==='complete')meta.append(recordActions(record,'????'));
+  card.append(thumb,meta);return card;
+}
+function renderHistory(){
+  const recent=$('recentList');const full=$('historyFullList');$('clearHistoryButton').disabled=!state.history.length;
+  recent.replaceChildren();full.replaceChildren();
+  if(!state.history.length){const empty=document.createElement('div');empty.className='empty-history';const symbol=document.createElement('span');symbol.textContent='?';empty.append(symbol,document.createTextNode('?????\n????????'));recent.append(empty);full.append(empty.cloneNode(true));return;}
+  state.history.slice(0,8).forEach(record=>recent.append(renderRecentCard(record)));
+  for(const record of state.history){
+    const card=document.createElement('article');card.className='history-card';
+    const preview=document.createElement('div');preview.className='history-preview';const media=mediaElement(record);
+    if(media)preview.append(media);else{const placeholder=document.createElement('span');placeholder.className='thumb-placeholder';placeholder.textContent=record.status==='expired'?'?':record.type==='video'?'?':'?';preview.append(placeholder);}
+    const body=document.createElement('div');body.className='history-copy';
+    const title=document.createElement('h3');title.textContent=record.modelName;
+    const prompt=document.createElement('p');prompt.textContent=record.prompt;
+    const small=document.createElement('small');small.textContent=`${formatDate(record.createdAt)} ? ${statusLabel(record)}${record.actualSize?' ? '+record.actualSize:''}`;
+    body.append(title,prompt,small);
+    const progress=progressElement(record);if(progress)body.append(progress);
+    if(record.status==='failed'){const error=document.createElement('p');error.textContent=record.error||record.lastPollError||'';body.append(error);}
+    if(record.prompt||record.status==='complete')body.append(recordActions(record,'????'));
+    card.append(preview,body);full.append(card);
+  }
 }
 async function saveMedia(record,index){try{const done=await window.workbench.saveResult(record.id,index);if(done)toast('????????????');}catch(e){toast(e.message);}}
 async function doGenerate(){if(!state.settings.hasKey){$('settingsDialog').showModal();toast('???? API Key');return;}const model=currentModel();const prompt=$('promptInput').value.trim();if(!prompt){toast('???????');$('promptInput').focus();return;}if(model.requiredRefs&&!state.references.length){toast('????????');return;}if(state.references.length&&!model.refs){toast('?????????');return;}

@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld('workbench',{
   history:()=>ipcRenderer.invoke('history:list'),
   clearHistory:()=>ipcRenderer.invoke('history:clear'),
   saveResult:(id,index)=>ipcRenderer.invoke('history:save',id,index),
+  copyPrompt:id=>ipcRenderer.invoke('history:copy-prompt',id),
   checkUpdates:()=>ipcRenderer.invoke('updates:check'),
   downloadUpdate:()=>ipcRenderer.invoke('updates:download'),
   installUpdate:()=>ipcRenderer.invoke('updates:install'),

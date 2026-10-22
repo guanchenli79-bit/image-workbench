@@ -8,6 +8,7 @@ const {normalizeBase,requestJson,generateImage,queryTask}=require('../src/api.cj
 const {recoverSubmittedMidjourney}=require('../src/recovery.cjs');
 const {releaseNotesText}=require('../src/update-notes.cjs');
 const {prepareReference}=require('../src/references.cjs');
+const {resolveRecordParams}=require('../src/renderer/record-params.js');
 const {migrateMultimodalHistory}=require('../src/maintenance-migration.cjs');
 
 test('??AI??????????????????????',()=>{
@@ -20,6 +21,12 @@ test('??AI??????????????????????',()=>{
   assert.deepEqual(converted[0].files,['image-1.png']);
   assert.equal(converted[0].actualRatio,'16:9');
   assert.equal(converted[1].taskId,'task-1');
+});
+
+test('?????????????????????',()=>{
+  const model={id:'gpt-image-2.5',ratios:['1:1','16:9'],resolutions:['1K','2K','4K']};
+  const record={modelId:model.id,presetId:'auto',actualRatio:'16:9',resolution:'1k'};
+  assert.deepEqual(resolveRecordParams(record,model,[{id:'auto'},{id:'1:1'},{id:'16:9'}]),{ratio:'16:9',resolution:'1K',seconds:null});
 });
 
 test('????????????????? HTML ??',()=>{

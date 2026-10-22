@@ -219,3 +219,12 @@ textarea{min-height:112px;line-height:1.65}
 :root[data-theme="dark"] .smooth-select-trigger,:root[data-theme="dark"] .prompt-input-wrap textarea,:root[data-theme="dark"] .duration-control select{background:rgba(14,23,37,.66)}
 :root[data-theme="dark"] .recent-thumb,:root[data-theme="dark"] .history-preview{background:rgba(18,27,43,.65)}
 :root[data-theme="dark"] .action-bar{background:linear-gradient(transparent,rgba(21,29,43,.74) 25%,rgba(21,29,43,.86))}
+
+.record-actions{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-top:12px}
+.record-actions-end{display:flex;align-items:center;gap:8px;margin-left:auto}
+.record-actions button,.history-copy .record-actions button{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:34px;margin:0;padding:6px 11px;border:1px solid #dfe5fb;border-radius:10px;background:#f4f6ff;color:var(--accent);font-size:13px;white-space:nowrap;transition:background .2s,border-color .2s,transform .2s,box-shadow .2s}
+.record-actions button:hover{background:#e9eeff;border-color:#b5c4f0;transform:translateY(-1px);box-shadow:0 5px 12px #394f9c18}
+.record-actions button:disabled{opacity:.55;cursor:wait;transform:none}
+.record-action-button svg{width:15px;height:15px;flex:none}
+:root[data-theme="dark"] .record-actions button{background:#29375e;border-color:#5365a4;color:#d8e0ff}
+:root[data-theme="dark"] .record-actions button:hover{background:#354780;border-color:#7386cb;box-shadow:0 5px 12px #05091844}

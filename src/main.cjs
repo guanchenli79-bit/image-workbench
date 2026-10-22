@@ -487,6 +487,13 @@ function registerIpc() {
     return {cleared:true,count};
   });
   ipcMain.handle('history:save',async(_,id,index)=>{requireLicense();return saveResult(id,index);});
+  ipcMain.handle('history:copy-prompt',(_,id)=>{
+    requireLicense();
+    const record=records.find(item=>item.id===id);
+    if(!record?.prompt)throw new Error('?????????????');
+    clipboard.writeText(record.prompt);
+    return true;
+  });
   ipcMain.handle('updates:check',async()=>{if(!app.isPackaged)return {message:'?????????'};await autoUpdater.checkForUpdates();return {message:'??????'};});
   ipcMain.handle('updates:download',async()=>{if(!app.isPackaged||!availableUpdate)throw new Error('???????????');await autoUpdater.downloadUpdate();return {message:'?????'};});
   ipcMain.handle('updates:install',()=>{if(!app.isPackaged||!updateReady)throw new Error('????????');autoUpdater.quitAndInstall(false,true);});
