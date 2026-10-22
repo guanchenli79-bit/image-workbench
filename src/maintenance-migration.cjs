@@ -1,6 +1,6 @@
 function migrateMultimodalHistory(history){
   return history.filter(record=>record&&['image','video'].includes(record.type)).map(record=>({
-    id:record.id,type:record.type,modelId:record.modelId,modelName:record.modelName||record.modelId||'????',
+    id:record.id,type:record.type,modelId:record.modelId,modelName:record.modelName||record.modelId||'未知模型',
     baseUrl:record.baseUrl||'',prompt:record.prompt||'',presetId:record.ratio||'auto',resolution:record.resolution||'default',
     actualRatio:record.ratio||'',actualSize:record.actualSize||'',status:record.status,
     progress:Number(record.progress)||0,createdAt:record.createdAt,completedAt:record.completedAt,
