@@ -11,7 +11,7 @@ const { normalizeBase, generateImage, generateVideo, queryTask } = require('./ap
 const { networkFetch } = require('./network.cjs');
 const { recoverSubmittedMidjourney } = require('./recovery.cjs');
 const { releaseNotesText } = require('./update-notes.cjs');
-const { prepareReference, MAX_REFERENCES } = require('./references.cjs');
+const { prepareReference, prepareGeneratedReference, generatedReferenceFile, MAX_REFERENCES } = require('./references.cjs');
 const { currentMachineCode, normalizeLicenseKey, hashCode, findLicense, fetchRegistry } = require('./license.cjs');
 const {fetchManifest,downloadWallpaper,sha256}=require('./wallpapers.cjs');
 const {loadIdentity,submitApplication,getApplication}=require('./approval.cjs');
@@ -96,7 +96,7 @@ async function writeJson(file, data) {
 }
 function encrypted(value) {
   if (!value) return '';
-  if (!safeStorage.isEncryptionAvailable()) throw new Error('???????????API Key ???');
+  if (!safeStorage.isEncryptionAvailable()) throw new Error('系统安全存储暂不可用，API Key 未保存');
   return safeStorage.encryptString(value).toString('base64');
 }
 function decrypted(value) {
@@ -106,10 +106,10 @@ function decrypted(value) {
 }
 function fallbackGrsaiModels() {
   return [
-    {name:'gpt-image-2',desc:'??1K'},
-    {name:'gpt-image-2-vip',desc:'??1K?2K?4K'},
-    {name:'gpt-image-2.5',desc:'??1K'},
-    {name:'nano-banana-2-cl',desc:'??1K'}
+    {name:'gpt-image-2',desc:'支持1K'},
+    {name:'gpt-image-2-vip',desc:'支持1K、2K、4K'},
+    {name:'gpt-image-2.5',desc:'支持1K'},
+    {name:'nano-banana-2-cl',desc:'支持1K'}
   ].map(item=>grsaiSpec({type:'image',closeModel:false,...item}));
 }
 function activeProfile() { return profiles[settings.baseUrl]; }
@@ -122,7 +122,7 @@ function activeImageModels() {
 }
 function activeVideoModels() {
   if(providerFor(settings.baseUrl)==='geeknow')return videoModels;
-  return [{id:'video-needs-adaptation',label:'??????????',family:'??',adapter:'unsupported',refs:false,ratios:['16:9'],seconds:[4],resolutions:['default']}];
+  return [{id:'video-needs-adaptation',label:'此端口视频模型待适配',family:'视频',adapter:'unsupported',refs:false,ratios:['16:9'],seconds:[4],resolutions:['default']}];
 }
 function profileSettings(baseUrl) { return {baseUrl,apiKey:profiles[baseUrl]?.apiKey||''}; }
 function modelSnapshot(extra={}) {
@@ -163,7 +163,7 @@ async function loadState() {
           const base=normalizeBase(rawBase);
           const multimodalProfile=Boolean(entry.key||entry.syncInfo);
           profiles[base]={apiKey:decrypted(entry.key||entry.apiKey),models:multimodalProfile?[]:Array.isArray(entry.models)?entry.models.slice(0,500):[],
-            supported:multimodalProfile?true:Boolean(entry.supported),syncedAt:multimodalProfile?0:Number(entry.syncedAt)||0,source:multimodalProfile?'?????':String(entry.source||''),unsupportedCount:Number(entry.unsupportedCount)||0};
+            supported:multimodalProfile?true:Boolean(entry.supported),syncedAt:multimodalProfile?0:Number(entry.syncedAt)||0,source:multimodalProfile?'待重新同步':String(entry.source||''),unsupportedCount:Number(entry.unsupportedCount)||0};
         }catch{}
       }
     } else profiles[activeBase]={apiKey:decrypted(stored.apiKey),models:[],supported:providerFor(activeBase)!=='openai-compatible'};
@@ -191,33 +191,33 @@ async function refreshApproval(){
     approvalCheckedAt=Date.now();
     approvalReason='';
     emit('license:status',licenseStatus());
-  }catch(error){approvalReason=`?????????${error.message}`;emit('license:status',licenseStatus());}
+  }catch(error){approvalReason=`审批服务暂不可用：${error.message}`;emit('license:status',licenseStatus());}
 }
 function licenseStatus() {
   const now=Date.now();
   if(approvalStatus.status!=='none'){
     const active=approvalStatus.status==='approved'&&Date.parse(approvalStatus.expiresAt)>now&&now-approvalCheckedAt<5*60*1000;
-    const labels={pending:'?????????????',rejected:`?????${approvalStatus.reason?`?${approvalStatus.reason}`:''}??????`,unbound:'?????????????',expired:'?????????????'};
-    return {active,machineCode:licenseMachineCode||'',expiresAt:active?approvalStatus.expiresAt:null,status:approvalStatus.status,name:approvalStatus.name||'',message:active?'?????':approvalReason||labels[approvalStatus.status]||'???????'};
+    const labels={pending:'申请已提交，等待管理员审批',rejected:`申请已驳回${approvalStatus.reason?`：${approvalStatus.reason}`:''}，可重新提交`,unbound:'设备已解绑，可重新提交申请',expired:'绑定已到期，请重新提交申请'};
+    return {active,machineCode:licenseMachineCode||'',expiresAt:active?approvalStatus.expiresAt:null,status:approvalStatus.status,name:approvalStatus.name||'',message:active?'已通过审批':approvalReason||labels[approvalStatus.status]||'请提交使用申请'};
   }
   const valid=!!licenseMachineCode && !!licenseRecord && Date.parse(licenseRecord.expiresAt)>now && now+5*60*1000>=Number(licenseRecord.lastSeenAt||0);
   return {active:valid,machineCode:licenseMachineCode||'',expiresAt:valid?licenseRecord.expiresAt:null,
-    status:valid?'legacy':'none',message:licenseMachineError || approvalReason || licenseReason || (licenseRecord&&!valid?'???????????????':'???????????????????')};
+    status:valid?'legacy':'none',message:licenseMachineError || approvalReason || licenseReason || (licenseRecord&&!valid?'旧版授权已到期，请提交使用申请':'填写用户名和密码，向管理员提交使用申请')};
 }
 function requireLicense() {
   if(!licenseStatus().active){emit('license:status',licenseStatus());throw new Error(licenseStatus().message);}
 }
 async function persistLicense() {
   if(!licenseRecord){await fsp.rm(files().license,{force:true});return;}
-  if(!safeStorage.isEncryptionAvailable())throw new Error('Windows ??????????????');
+  if(!safeStorage.isEncryptionAvailable())throw new Error('Windows 安全存储不可用，无法保存授权');
   await writeJson(files().license,{data:encrypted(JSON.stringify(licenseRecord))});
 }
 async function activateLicense(input) {
-  if(!licenseMachineCode)throw new Error(licenseMachineError||'??????');
+  if(!licenseMachineCode)throw new Error(licenseMachineError||'机器码不可用');
   const key=normalizeLicenseKey(input);
   const registry=await fetchRegistry(undefined,{preferApi:true});
   const match=findLicense(registry,licenseMachineCode,key);
-  if(!match)throw new Error('??????????????????????');
+  if(!match)throw new Error('卡密无效、已解绑、已到期，或与这台机器不匹配');
   licenseRecord={machineHash:hashCode('machine',licenseMachineCode),keyHash:hashCode('license',key),expiresAt:match.expiresAt,lastSeenAt:Date.now()};
   licenseReason='';
   await persistLicense();
@@ -230,7 +230,7 @@ async function refreshLicense() {
   try {
     const registry=await fetchRegistry();
     const match=registry.entries.find(entry=>entry.machineHash===licenseRecord.machineHash&&entry.keyHash===licenseRecord.keyHash&&Date.parse(entry.expiresAt)>Date.now());
-    if(!match){licenseRecord=null;licenseReason='?????????????????????';}
+    if(!match){licenseRecord=null;licenseReason='授权已被管理员解绑或已到期，请重新获取卡密';}
     else {licenseRecord.expiresAt=match.expiresAt;licenseRecord.lastSeenAt=Date.now();licenseReason='';}
     await persistLicense();
     emit('license:status',licenseStatus());
@@ -252,13 +252,13 @@ function publicSettings() {
     provider:providerFor(settings.baseUrl),syncedAt:profile?.syncedAt||0,source:profile?.source||'',
     supported:profile?.supported!==false,unsupportedCount:profile?.unsupportedCount||0};
 }
-function storeReferences(inputs) {
+function storeReferences(inputs,{expiresAt=null}={}) {
   if (!Array.isArray(inputs) || !inputs.length) return [];
-  if (inputs.length + refs.size > MAX_REFERENCES) throw new Error(`??????? ${MAX_REFERENCES} ??????????`);
+  if (inputs.length + refs.size > MAX_REFERENCES) throw new Error(`参考图最多支持 ${MAX_REFERENCES} 张，请先移除多余图片`);
   const prepared = inputs.map(input=>prepareReference(input.name,input.bytes));
   return prepared.map(({buffer,mime,name})=>{
     const id=crypto.randomUUID();
-    refs.set(id,{buffer,mime,name,addedAt:Date.now()});
+    refs.set(id,{buffer,mime,name,addedAt:Date.now(),expiresAt});
     return {id,name,preview:`data:${mime};base64,${buffer.toString('base64')}`};
   });
 }
@@ -274,31 +274,34 @@ function listHistory() { return records.map(({files:mediaFiles,...rest})=>({...r
 function availableMedia(id,index) {
   const record=records.find(x=>x.id===id && x.status==='complete' && Date.now()<x.expiresAt);
   const name=Number.isInteger(index) && index>=0 ? record?.files?.[index] : null;
-  if(!name)throw new Error('?????????????????');
+  if(!name)throw new Error('生成文件已过期或不存在，请重新生成');
   return {record,file:path.join(files().media,name)};
 }
 async function saveResult(id,index) {
   requireLicense();
   const {record,file}=availableMedia(id,index);
   const ext=path.extname(file);
-  const chosen=await dialog.showSaveDialog(mainWindow,{title:'??????',defaultPath:`${record.modelId}-${new Date(record.createdAt).toISOString().slice(0,10)}${ext}`,filters:[{name:record.type==='video'?'??':'??',extensions:[ext.slice(1)]}]});
+  const chosen=await dialog.showSaveDialog(mainWindow,{title:'永久保存作品',defaultPath:`${record.modelId}-${new Date(record.createdAt).toISOString().slice(0,10)}${ext}`,filters:[{name:record.type==='video'?'视频':'图片',extensions:[ext.slice(1)]}]});
   if(chosen.canceled)return false;
   await fsp.copyFile(file,chosen.filePath);return true;
 }
 async function copyImage(id,index) {
   requireLicense();
   const {record,file}=availableMedia(id,index);
-  if(record.type!=='image')throw new Error('???????????');
+  if(record.type!=='image')throw new Error('仅图片支持复制到剪贴板');
   const original=await fsp.readFile(file);
   const image=nativeImage.createFromBuffer(original);
-  if(image.isEmpty())throw new Error('????????????????');
+  if(image.isEmpty())throw new Error('此图片格式无法复制，请保存原文件');
   const png=original.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10]))?original:image.toPNG();
   await clipboard.write([new ClipboardItem({'image/png':new Blob([png],{type:'image/png'})})]);
-  emit('app:notice','?????????????????????');
+  emit('app:notice','图像已复制，保留原始尺寸与比例，可直接粘贴');
 }
 
 async function pruneExpired() {
   let changed=false;
+  const expiredReferences=[];
+  for(const [id,reference] of refs)if(reference.expiresAt && Date.now()>=reference.expiresAt){refs.delete(id);expiredReferences.push(id);}
+  if(expiredReferences.length)emit('reference:expired',expiredReferences);
   for (const r of records) {
     if (r.expiresAt && Date.now() >= r.expiresAt && r.status !== 'expired') {
       for (const name of r.files||[]) await fsp.rm(path.join(files().media,name),{force:true}).catch(()=>{});
@@ -319,17 +322,17 @@ function extension(mime,type,buffer) {
 }
 async function resultBuffer(settingsSnapshot,item,type) {
   if (item.b64) return Buffer.from(item.b64.replace(/^data:[^,]+,/i,''),'base64');
-  if (!item.url) throw new Error('??????????');
+  if (!item.url) throw new Error('生成结果缺少文件地址');
   const url = new URL(item.url);
-  if(url.protocol!=='https:' && !(url.protocol==='http:' && ['localhost','127.0.0.1'].includes(url.hostname)))throw new Error('?????????');
+  if(url.protocol!=='https:' && !(url.protocol==='http:' && ['localhost','127.0.0.1'].includes(url.hostname)))throw new Error('生成文件地址不安全');
   const sameOrigin = url.origin === new URL(normalizeBase(settingsSnapshot.baseUrl)).origin;
   const response = await networkFetch(url,{headers:sameOrigin?{Authorization:`Bearer ${settingsSnapshot.apiKey}`}:{},signal:AbortSignal.timeout(type==='video'?240000:90000)});
-  if(!response.ok)throw new Error(`?????????HTTP ${response.status}?`);
+  if(!response.ok)throw new Error(`下载生成结果失败（HTTP ${response.status}）`);
   const limit=type==='video'?MAX_VIDEO_BYTES:MAX_IMAGE_BYTES;
   const size=Number(response.headers.get('content-length')||0);
-  if(size>limit)throw new Error('??????????????');
+  if(size>limit)throw new Error('生成文件超过本地缓存大小限制');
   const chunks=[];let total=0;
-  for await (const chunk of response.body) { total+=chunk.length; if(total>limit)throw new Error('??????????????'); chunks.push(Buffer.from(chunk)); }
+  for await (const chunk of response.body) { total+=chunk.length; if(total>limit)throw new Error('生成文件超过本地缓存大小限制'); chunks.push(Buffer.from(chunk)); }
   return Buffer.concat(chunks);
 }
 async function completeRecord(record,items,settingsSnapshot) {
@@ -338,14 +341,14 @@ async function completeRecord(record,items,settingsSnapshot) {
   const active=()=>epoch===historyEpoch&&records.includes(record);
   try {
     for(let i=0;i<items.length;i++) {
-      if(!active())throw new Error('?????????');
+      if(!active())throw new Error('任务已从历史中清除');
       const buffer=await resultBuffer(settingsSnapshot,items[i],record.type);
-      if(!active())throw new Error('?????????');
+      if(!active())throw new Error('任务已从历史中清除');
       const name=`${record.id}-${i}${extension(items[i].mime,record.type,buffer)}`;
       await fsp.writeFile(path.join(files().media,name),buffer);
       names.push(name);
     }
-    if(!active())throw new Error('?????????');
+    if(!active())throw new Error('任务已从历史中清除');
     record.files=names; record.status='complete'; record.progress=100;
     record.completedAt=Date.now(); record.expiresAt=record.completedAt+TTL;
     await persistRecords();
@@ -364,7 +367,7 @@ async function pollTasks() {
       try {
         const oldGeeknow=Object.keys(profiles).find(base=>providerFor(base)==='geeknow');
         const taskSettings=profileSettings(record.baseUrl||oldGeeknow||settings.baseUrl);
-        if(!taskSettings.apiKey){record.lastPollError='???? API Key ????????????';return;}
+        if(!taskSettings.apiKey){record.lastPollError='原端口的 API Key 已清除，无法继续查询任务';return;}
         const result=await queryTask(taskSettings,record.taskAdapter,record.taskId,record.type);
         if(!records.includes(record))return;
         if(result.status==='complete') await completeRecord(record,result.items,taskSettings);
@@ -376,7 +379,7 @@ async function pollTasks() {
 }
 
 function createWindow() {
-  mainWindow=new BrowserWindow({width:1440,height:900,minWidth:1050,minHeight:700,backgroundColor:'#f5f6f8',title:'?????',icon:path.join(__dirname,'..','assets','logo.ico'),autoHideMenuBar:true,
+  mainWindow=new BrowserWindow({width:1440,height:900,minWidth:1050,minHeight:700,backgroundColor:'#f5f6f8',title:'画境工作台',icon:path.join(__dirname,'..','assets','logo.ico'),autoHideMenuBar:true,
     webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
   mainWindow.loadFile(path.join(__dirname,'renderer','index.html'));
   mainWindow.webContents.setWindowOpenHandler(({url})=>{ if(url.startsWith('https://docs.geeknow.ai/'))shell.openExternal(url); return {action:'deny'}; });
@@ -389,8 +392,8 @@ function createWindow() {
     const index=Number(indexRaw);
     const run=action=>()=>action(id,index).catch(error=>emit('app:notice',error.message));
     Menu.buildFromTemplate([
-      {label:'?????????',click:run(copyImage)},
-      {label:'????????',click:run(saveResult)}
+      {label:'复制图像（原尺寸）',click:run(copyImage)},
+      {label:'保存原图到电脑…',click:run(saveResult)}
     ]).popup({window:mainWindow});
   });
 }
@@ -400,19 +403,19 @@ function registerIpc() {
     {license:licenseStatus(),wallpaper:wallpaperDescriptor(),...modelSnapshot(),presets,history:listHistory(),version:app.getVersion(),isPackaged:app.isPackaged}:
     {license:licenseStatus(),wallpaper:wallpaperDescriptor(),version:app.getVersion(),isPackaged:app.isPackaged});
   ipcMain.handle('approval:submit',async(_,input)=>{
-    if(!deviceIdentity||!licenseMachineCode)throw new Error(approvalReason||licenseMachineError||'???????');
+    if(!deviceIdentity||!licenseMachineCode)throw new Error(approvalReason||licenseMachineError||'设备身份不可用');
     approvalStatus=await submitApplication(deviceIdentity,licenseMachineCode,String(input?.username||'').trim(),String(input?.password||''));
     approvalCheckedAt=Date.now();
     emit('license:status',licenseStatus());
     return licenseStatus();
   });
   ipcMain.handle('approval:refresh',async()=>{await refreshApproval();return licenseStatus();});
-  ipcMain.handle('license:copy-machine',()=>{if(!licenseMachineCode)throw new Error(licenseMachineError||'??????');clipboard.writeText(licenseMachineCode);return true;});
+  ipcMain.handle('license:copy-machine',()=>{if(!licenseMachineCode)throw new Error(licenseMachineError||'机器码不可用');clipboard.writeText(licenseMachineCode);return true;});
   ipcMain.handle('settings:save',async(_,input)=>{
     requireLicense();
     const baseUrl=normalizeBase(input.baseUrl);
     const apiKey=String(input.apiKey||'').trim();
-    if(apiKey && !safeStorage.isEncryptionAvailable())throw new Error('?????????????? API Key');
+    if(apiKey && !safeStorage.isEncryptionAvailable())throw new Error('系统安全存储不可用，无法保存 API Key');
     const previousModels=activeImageModels();
     const profile=profiles[baseUrl]||{apiKey:'',models:[],supported:providerFor(baseUrl)!=='openai-compatible'};
     if(!profile.models.length && providerFor(baseUrl)==='openai-compatible'){profile.models=previousModels;profile.supported=false;}
@@ -428,7 +431,7 @@ function registerIpc() {
     requireLicense();
     const baseUrl=normalizeBase(input.baseUrl);
     const candidate={baseUrl,apiKey:String(input.apiKey||'').trim()||profiles[baseUrl]?.apiKey||''};
-    if(!candidate.apiKey)throw new Error('???? API Key');
+    if(!candidate.apiKey)throw new Error('请先输入 API Key');
     const result=await syncImageModels(candidate);
     return {ok:true,modelCount:result.models.length,authVerified:result.provider!=='grsai'};
   });
@@ -436,27 +439,39 @@ function registerIpc() {
   ipcMain.handle('size:resolve',async(_,input)=>{requireLicense();const model=[...activeImageModels(),...activeVideoModels()].find(x=>x.id===input.modelId);return model?resolveSize(model,input.presetId,input.prompt,input.referenceDimensions,input.resolutionId):null;});
   ipcMain.handle('reference:choose',async()=>{
     requireLicense();
-    const picked=await dialog.showOpenDialog(mainWindow,{title:'?????',properties:['openFile','multiSelections'],filters:[{name:'??',extensions:['png','jpg','jpeg','webp']}]});
+    const picked=await dialog.showOpenDialog(mainWindow,{title:'选择参考图',properties:['openFile','multiSelections'],filters:[{name:'图片',extensions:['png','jpg','jpeg','webp']}]});
     if(picked.canceled)return [];
-    if(picked.filePaths.length+refs.size>MAX_REFERENCES)throw new Error(`??????? ${MAX_REFERENCES} ??????????`);
+    if(picked.filePaths.length+refs.size>MAX_REFERENCES)throw new Error(`参考图最多支持 ${MAX_REFERENCES} 张，请先移除多余图片`);
     const inputs=await Promise.all(picked.filePaths.map(async file=>({name:path.basename(file),bytes:await fsp.readFile(file)})));
     return storeReferences(inputs);
   });
   ipcMain.handle('reference:add',async(_,inputs)=>{requireLicense();return storeReferences(inputs);});
+  ipcMain.handle('reference:add-generated',async(_,id,index)=>{
+    requireLicense();
+    if(refs.size>=MAX_REFERENCES)throw new Error(`参考图最多支持 ${MAX_REFERENCES} 张，请先移除多余图片`);
+    const name=generatedReferenceFile(records,id,index);
+    const bytes=await fsp.readFile(path.join(files().media,name));
+    const prepared=prepareGeneratedReference(name,bytes,nativeImage);
+    // Recheck after disk IO: expiry or history clearing may have happened while reading.
+    generatedReferenceFile(records,id,index);
+    const expiresAt=records.find(record=>record.id===id).expiresAt;
+    return storeReferences([{name:prepared.name,bytes:prepared.buffer}],{expiresAt});
+  });
   ipcMain.handle('reference:clear',async(_,ids)=>{requireLicense();for(const id of ids||[])refs.delete(id);});
   ipcMain.handle('generate',async(_,input)=>{
     requireLicense();
     await pruneExpired();
     const type=input.type==='video'?'video':'image';
-    if(activeProfile()?.supported===false)throw new Error('??????????????????????????');
+    if(activeProfile()?.supported===false)throw new Error('此端口的模型参数尚未适配，请先同步模型或更换接口地址');
     const model=(type==='video'?activeVideoModels():activeImageModels()).find(x=>x.id===input.modelId);
-    if(!model||model.adapter==='unsupported')throw new Error('?????????????????????????');
-    const prompt=String(input.prompt||'').trim();if(!prompt)throw new Error('??????');
-    if(prompt.length>8000)throw new Error('?????');
+    if(!model||model.adapter==='unsupported')throw new Error('此端口的视频接口尚未适配，请切换到已支持的视频端口');
+    const prompt=String(input.prompt||'').trim();if(!prompt)throw new Error('请填写提示词');
+    if(prompt.length>8000)throw new Error('提示词过长');
     const references=(input.referenceIds||[]).map(id=>refs.get(id)).filter(Boolean);
-    if(references.length>10)throw new Error('??????? 10 ?');
-    if(references.length && !model.refs)throw new Error('?????????');
-    if(model.requiredRefs && !references.length)throw new Error('????????????');
+    if(references.length!==(input.referenceIds||[]).length)throw new Error('部分参考图已过期或被移除，请重新添加');
+    if(references.length>10)throw new Error('参考图最多支持 10 张');
+    if(references.length && !model.refs)throw new Error('该模型不支持参考图');
+    if(model.requiredRefs && !references.length)throw new Error('该模型需要至少一张参考图');
     const sizing=resolveSize(model,input.presetId,prompt,input.referenceDimensions,type==='image'?input.resolutionId:undefined);
     const snapshot={...settings};
     const record={id:crypto.randomUUID(),type,modelId:model.id,modelName:model.label,baseUrl:settings.baseUrl,prompt,presetId:input.presetId,resolution:sizing.resolution,actualRatio:sizing.ratio,actualSize:sizing.size,status:'submitting',progress:0,createdAt:Date.now(),files:[]};
@@ -474,7 +489,7 @@ function registerIpc() {
     requireLicense();
     const count=records.length;
     if(count){
-      const {response}=await dialog.showMessageBox(mainWindow,{type:'warning',title:'???????',message:`?????? ${count} ???????`,detail:'?????????????????????????????????????????',buttons:['??','????'],defaultId:0,cancelId:0,noLink:true});
+      const {response}=await dialog.showMessageBox(mainWindow,{type:'warning',title:'清空历史任务？',message:`确定清空全部 ${count} 条历史任务吗？`,detail:'未另存的本机临时图片和视频会一起删除，无法恢复。正在生成的服务端任务可能继续运行。',buttons:['取消','清空历史'],defaultId:0,cancelId:0,noLink:true});
       if(response!==1)return {cleared:false,count:0};
     }
     historyEpoch++;
@@ -490,13 +505,13 @@ function registerIpc() {
   ipcMain.handle('history:copy-prompt',(_,id)=>{
     requireLicense();
     const record=records.find(item=>item.id===id);
-    if(!record?.prompt)throw new Error('?????????????');
+    if(!record?.prompt)throw new Error('这条任务没有可复制的提示词');
     clipboard.writeText(record.prompt);
     return true;
   });
-  ipcMain.handle('updates:check',async()=>{if(!app.isPackaged)return {message:'?????????'};await autoUpdater.checkForUpdates();return {message:'??????'};});
-  ipcMain.handle('updates:download',async()=>{if(!app.isPackaged||!availableUpdate)throw new Error('???????????');await autoUpdater.downloadUpdate();return {message:'?????'};});
-  ipcMain.handle('updates:install',()=>{if(!app.isPackaged||!updateReady)throw new Error('????????');autoUpdater.quitAndInstall(false,true);});
+  ipcMain.handle('updates:check',async()=>{if(!app.isPackaged)return {message:'开发模式不检查更新'};await autoUpdater.checkForUpdates();return {message:'正在检查更新'};});
+  ipcMain.handle('updates:download',async()=>{if(!app.isPackaged||!availableUpdate)throw new Error('当前没有可下载的新版本');await autoUpdater.downloadUpdate();return {message:'更新已下载'};});
+  ipcMain.handle('updates:install',()=>{if(!app.isPackaged||!updateReady)throw new Error('更新尚未下载完成');autoUpdater.quitAndInstall(false,true);});
 }
 
 app.whenReady().then(async()=>{

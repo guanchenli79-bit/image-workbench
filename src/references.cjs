@@ -19,4 +19,32 @@ function prepareReference(name, bytes) {
   return {name:safeName,mime,buffer};
 }
 
-module.exports = {prepareReference,MAX_REFERENCE_BYTES,MAX_REFERENCES};
+function generatedReferenceFile(records, id, index, now=Date.now()) {
+  const record=records.find(item=>item.id===id);
+  if(record?.type!=='image' || record.status!=='complete' || !Number.isFinite(record.expiresAt) || now>=record.expiresAt)
+    throw new Error('这张生成图片已过期或不可用，请重新生成');
+  if(!Array.isArray(record.files) || !Number.isInteger(index) || index<0 || index>=record.files.length)
+    throw new Error('找不到这张生成图片');
+  const name=record.files[index];
+  if(typeof name!=='string' || path.basename(name)!==name || !MIME_BY_EXTENSION[path.extname(name).toLowerCase()])
+    throw new Error('这张生成图片的格式不支持作为参考图');
+  return name;
+}
+
+function prepareGeneratedReference(name, bytes, nativeImage) {
+  if(bytes.length<=MAX_REFERENCE_BYTES)return prepareReference(name,bytes);
+  const image=nativeImage.createFromBuffer(bytes);
+  if(image.isEmpty())throw new Error('生成图片无法作为参考图打开');
+  for(const quality of [95,88,78,68]) {
+    const jpeg=image.toJPEG(quality);
+    if(jpeg.length<=MAX_REFERENCE_BYTES)return prepareReference(`${path.parse(name).name}.jpg`,jpeg);
+  }
+  const size=image.getSize();
+  const scale=Math.min(1,4096/Math.max(size.width,size.height));
+  const reduced=image.resize({width:Math.max(1,Math.floor(size.width*scale)),height:Math.max(1,Math.floor(size.height*scale))});
+  const jpeg=reduced.toJPEG(78);
+  if(jpeg.length<=MAX_REFERENCE_BYTES)return prepareReference(`${path.parse(name).name}.jpg`,jpeg);
+  throw new Error('生成图片过大，无法放入参考图区域');
+}
+
+module.exports = {prepareReference,prepareGeneratedReference,generatedReferenceFile,MAX_REFERENCE_BYTES,MAX_REFERENCES};
