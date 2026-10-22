@@ -30,6 +30,14 @@
       "path": "wallpapers/assets/wall-b9892c34-327b-4428-a9b7-f4e54da9486a.mp4",
       "sha256": "44f1be8fb3f5ba82e47b95042c32b44ef1bde5cd376fcc5913d3c5cc90d6916e",
       "size": 22420484
+    },
+    {
+      "id": "wall-84a2f838-020e-44c3-a0d2-9d70ee095d7a",
+      "name": "企业微信截图_1789632250209",
+      "kind": "image",
+      "path": "wallpapers/assets/wall-84a2f838-020e-44c3-a0d2-9d70ee095d7a.png",
+      "sha256": "de934d44f543fbb5cdaaea63f030854a07050e30c703f351164f57ccb6d60ebe",
+      "size": 3899073
     }
   ]
 }
