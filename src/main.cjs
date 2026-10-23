@@ -10,7 +10,7 @@ const { resolveSize } = require('./sizing.cjs');
 const { normalizeBase, generateImage, generateVideo, queryTask } = require('./api.cjs');
 const { networkFetch } = require('./network.cjs');
 const { recoverSubmittedMidjourney } = require('./recovery.cjs');
-const { releaseNotesText } = require('./update-notes.cjs');
+const { releaseNotesText, updateErrorMessage } = require('./update-notes.cjs');
 const { prepareReference, prepareGeneratedReference, generatedReferenceFile, MAX_REFERENCES } = require('./references.cjs');
 const { currentMachineCode, normalizeLicenseKey, hashCode, findLicense, fetchRegistry } = require('./license.cjs');
 const {fetchManifest,downloadWallpaper,sha256}=require('./wallpapers.cjs');
@@ -509,8 +509,8 @@ function registerIpc() {
     clipboard.writeText(record.prompt);
     return true;
   });
-  ipcMain.handle('updates:check',async()=>{if(!app.isPackaged)return {message:'开发模式不检查更新'};await autoUpdater.checkForUpdates();return {message:'正在检查更新'};});
-  ipcMain.handle('updates:download',async()=>{if(!app.isPackaged||!availableUpdate)throw new Error('当前没有可下载的新版本');await autoUpdater.downloadUpdate();return {message:'更新已下载'};});
+  ipcMain.handle('updates:check',async()=>{if(!app.isPackaged)return {message:'开发模式不检查更新'};try{await autoUpdater.checkForUpdates();return {message:'正在检查更新'};}catch(error){throw new Error(updateErrorMessage(error));}});
+  ipcMain.handle('updates:download',async()=>{if(!app.isPackaged||!availableUpdate)throw new Error('当前没有可下载的新版本');try{await autoUpdater.downloadUpdate();return {message:'更新已下载'};}catch(error){throw new Error(updateErrorMessage(error));}});
   ipcMain.handle('updates:install',()=>{if(!app.isPackaged||!updateReady)throw new Error('更新尚未下载完成');autoUpdater.quitAndInstall(false,true);});
 }
 
@@ -550,7 +550,7 @@ app.whenReady().then(async()=>{
     autoUpdater.on('update-not-available',()=>{if(!updateReady){availableUpdate=false;emit('update:status',{state:'current'});}});
     autoUpdater.on('download-progress',p=>emit('update:status',{state:'downloading',percent:Math.round(p.percent)}));
     autoUpdater.on('update-downloaded',info=>{updateReady=true;readyVersion=info.version;const notes=releaseNotesText(info.releaseNotes);emit('update:status',{state:'ready',version:info.version,...(notes?{notes}:{})});});
-    autoUpdater.on('error',error=>emit('update:status',{state:'error',message:error.message}));
+    autoUpdater.on('error',error=>emit('update:status',{state:'error',message:updateErrorMessage(error)}));
     setTimeout(()=>autoUpdater.checkForUpdates().catch(()=>{}),7000);
     setInterval(()=>autoUpdater.checkForUpdates().catch(()=>{}),30*60*1000);
   }

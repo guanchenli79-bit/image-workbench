@@ -120,6 +120,7 @@ function renderUpdate(data){
   const action=$('updateActionButton');
   const title=$('updateTitle');
   const description=$('updateDescription');
+  $('updateNotesText').parentElement.hidden=status.state==='error';
   $('updateNotesText').textContent=status.notes||'此次更新说明暂未获取，请到 GitHub Releases 查看。';
   if(status.state==='current'){button.hidden=true;return;}
   if(status.state==='checking'||status.state==='idle')return;

@@ -6,7 +6,15 @@ const {imageModels,presets}=require('../src/catalog.cjs');
 const {autoRatio,resolveSize}=require('../src/sizing.cjs');
 const {normalizeBase,requestJson,generateImage,queryTask}=require('../src/api.cjs');
 const {recoverSubmittedMidjourney}=require('../src/recovery.cjs');
-const {releaseNotesText}=require('../src/update-notes.cjs');
+const {releaseNotesText,updateErrorMessage}=require('../src/update-notes.cjs');
+
+test('更新错误不会把响应头或 Cookie 显示给用户',()=>{
+  const error={statusCode:404,message:'HttpError: 404 GET releases.atom Headers: set-cookie: private-value'};
+  const message=updateErrorMessage(error);
+  assert.match(message,/更新服务暂时无法访问/);
+  assert.doesNotMatch(message,/private-value|set-cookie|Headers/);
+  assert.doesNotMatch(updateErrorMessage(new Error('set-cookie: secret')),/secret/);
+});
 const {prepareReference,prepareGeneratedReference,generatedReferenceFile,MAX_REFERENCE_BYTES}=require('../src/references.cjs');
 
 test('已生成图片只能从未过期的图片任务按序号引用',()=>{

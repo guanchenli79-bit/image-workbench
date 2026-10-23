@@ -1,6 +1,6 @@
 {
   "name": "image-workbench",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "private": true,
   "description": "画境图像与视频创作工作台",
   "main": "src/main.cjs",

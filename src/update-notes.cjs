@@ -21,4 +21,12 @@ function releaseNotesText(value) {
   return entries.filter(Boolean).join('\n\n').slice(0,8000);
 }
 
-module.exports={releaseNotesText};
+function updateErrorMessage(error) {
+  const detail=String(error?.message||'');
+  const status=Number(error?.statusCode||error?.status||/\b(?:HttpError:|HTTP|status(?: code)?)\s*[: ]?\s*(\d{3})\b/i.exec(detail)?.[1]);
+  if([401,403,404].includes(status))return '更新服务暂时无法访问。请确认发布仓库可公开读取，然后重新检查。';
+  if(status>=500)return '更新服务暂时不可用，请稍后重新检查。';
+  return '检查或下载更新失败，请检查网络后重试。';
+}
+
+module.exports={releaseNotesText,updateErrorMessage};
