@@ -4,7 +4,7 @@
 <header><div class="brand"><img src="../../assets/logo.svg" alt=""><div><strong>画境 · 使用审批管理</strong><small>仅在管理机使用</small></div></div><div class="header-actions"><span class="admin-badge">ADMIN CONSOLE</span><button id="lockButton" class="reload" type="button" hidden>锁定管理端</button></div></header>
 <main id="authPage" class="auth-page" hidden><section class="panel auth-panel"><div class="section-heading"><span>PRIVATE ACCESS</span><h1 id="authTitle">管理员登录</h1></div><p id="authIntro" class="inventory-intro"></p><form id="authForm"><label for="passwordInput">管理员密码</label><input id="passwordInput" type="password" autocomplete="current-password" minlength="8" maxlength="128" required><div id="confirmationField" hidden><label for="confirmationInput">再次输入密码</label><input id="confirmationInput" type="password" autocomplete="new-password" minlength="8" maxlength="128"></div><button id="authButton" type="submit" class="primary">进入管理端</button></form><p id="authMessage" class="action-message" role="status"></p></section></main>
 <main id="workspace" hidden><section class="hero"><span class="eyebrow">ADMIN CONTROL</span><h1>画境管理中心</h1><p>审批使用申请、管理绑定期限与设备，发布公告，并远程更换登录页和工作台背景。</p></section>
-<nav class="admin-tabs" aria-label="管理页面"><button class="admin-tab active" data-page="applicationsPage" type="button">待审批</button><button class="admin-tab" data-page="bindingsPage" type="button">绑定管理</button><button class="admin-tab" data-page="legacyPage" type="button">旧版记录</button><button class="admin-tab" data-page="wallpapersPage" type="button">页面主题</button><button class="admin-tab" data-page="announcementsPage" type="button">公告管理</button></nav>
+<nav class="admin-tabs" aria-label="管理页面"><button class="admin-tab active" data-page="applicationsPage" type="button">待审批</button><button class="admin-tab" data-page="bindingsPage" type="button">绑定管理</button><button class="admin-tab" data-page="legacyPage" type="button">旧版记录</button><button class="admin-tab" data-page="wallpapersPage" type="button">页面主题</button><button class="admin-tab" data-page="announcementsPage" type="button">公告管理</button><button class="admin-tab" data-page="modelRulesPage" type="button">接口规则</button></nav>
 <section id="applicationsPage" class="admin-page"><section class="panel history-panel"><div class="section-heading"><span>01 / REQUESTS</span><h2>待审批申请</h2></div><p class="inventory-intro">用户提交用户名和密码后会出现在这里。批准时设置有效期；批准后用户会看到登录按钮，点击即可进入。</p><button id="reloadApplications" class="reload" type="button">刷新申请</button><div id="applicationList" class="history-list"></div></section></section>
 <section id="bindingsPage" class="admin-page" hidden><section class="panel history-panel"><div class="section-heading"><span>02 / BINDINGS</span><h2>设备绑定管理</h2></div><p class="inventory-intro">在线数据库完整保存审批记录。解绑、到期和驳回记录仍会保留；仅手动删除才会移除。换绑需要新机器用同一用户名和密码先提交申请。</p><button id="reloadBindings" class="reload" type="button">刷新绑定</button><div id="bindingList" class="history-list"></div></section></section>
 <section id="legacyPage" class="admin-page" hidden><section class="panel history-panel"><div class="section-heading"><span>ARCHIVE</span><h2>旧版卡密记录</h2></div><p class="inventory-intro">升级前保存在本机的卡密历史只读保留。旧版卡密在线绑定已撤销；新版申请和绑定以在线数据库为准。</p><div id="legacyList" class="history-list"></div></section></section>
@@ -35,6 +35,56 @@
   <p class="inventory-intro">发布后将替换当前公告，并提醒已批准的设备。</p>
   <div class="wallpaper-toolbar"><button id="cancelAnnouncementPreview" class="reload" type="button">返回编辑</button><button id="publishAnnouncement" class="primary" type="button">确认发布</button></div>
 </dialog>
+<section id="modelRulesPage" class="admin-page" hidden>
+  <section class="panel history-panel">
+    <div class="section-heading"><h2>接口规则</h2></div>
+    <p class="inventory-intro">按 API 地址和模型设置画幅、分辨率与请求路径。发布后，已支持在线规则的用户端会自动同步。</p>
+    <div class="rule-toolbar">
+      <label>已发布规则 <select id="publishedRuleList"></select></label>
+      <button id="newModelRule" class="reload" type="button">新建规则</button>
+      <button id="modelGoRuleSample" class="reload" type="button">载入 ModelGo 示例</button>
+      <button id="reloadModelRules" class="reload" type="button">刷新</button>
+    </div>
+    <p id="ruleServiceStatus" class="inventory-intro" role="status"></p>
+    <form id="modelRuleForm" class="model-rule-form">
+      <div class="rule-form-grid">
+        <label>API 基础地址<input id="ruleBaseUrl" type="url" placeholder="https://api.modelgo.ai/v1" required></label>
+        <label>模型 ID<input id="ruleModelId" placeholder="doubao-seedream-5.5" maxlength="180" required></label>
+        <label>显示名称<input id="ruleLabel" placeholder="Seedream 5.5" maxlength="100"></label>
+        <label>图片协议<select id="ruleProtocol"><option value="seedream-json">Seedream 图片 JSON</option><option value="openai-images">OpenAI Images</option><option value="siliconflow-images">硅基流动图片 JSON</option></select></label>
+        <label>生图路径<input id="ruleGenerationPath" value="/v1/images/generations" maxlength="160" required></label>
+        <label>模型列表路径（选填）<input id="ruleModelsPath" placeholder="/v1/models" maxlength="160"></label>
+        <label id="ruleEditLabel" hidden>参考图编辑路径<input id="ruleEditPath" placeholder="/v1/images/edits" maxlength="160"></label>
+        <label>参考图上限<input id="ruleMaxRefs" type="number" min="0" max="10" value="0" required></label>
+      </div>
+      <div class="rule-flags">
+        <label><input id="ruleRequiredRefs" type="checkbox"> 必须使用参考图</label>
+        <label><input id="ruleAllowUnlisted" type="checkbox"> 列表无此模型时仍显示</label>
+        <label id="ruleWatermarkLabel"><input id="ruleWatermark" type="checkbox"> 添加水印</label>
+      </div>
+      <div class="rule-form-grid">
+        <label>分辨率档位<input id="ruleTiers" placeholder="1K, 1.5K, 2K" required></label>
+        <label>画幅比例<input id="ruleRatios" placeholder="1:1, 16:9, 9:16" required></label>
+        <label>默认分辨率<select id="ruleDefaultTier"></select></label>
+      </div>
+      <p class="inventory-intro">用逗号分隔档位和画幅。下表中的每个格子填一个像素尺寸，例如 2816x1584。</p>
+      <div class="rule-table-wrap"><table id="ruleSizeTable" class="rule-size-table"></table></div>
+      <div class="rule-toolbar rule-preview-controls">
+        <label>预览画幅 <select id="previewRuleRatio"></select></label>
+        <label>预览分辨率 <select id="previewRuleTier"></select></label>
+        <button id="previewModelRule" class="reload" type="submit">预览请求</button>
+        <button id="publishModelRule" class="primary" type="button">发布规则</button>
+        <button id="removeModelRule" class="reload" type="button" hidden>撤下此规则</button>
+      </div>
+      <pre id="modelRulePreview" class="rule-request-preview" hidden></pre>
+      <p id="ruleActionStatus" class="action-message" role="status"></p>
+    </form>
+    <div class="rule-toolbar rule-version-bar">
+      <label>版本历史 <select id="ruleVersionHistory"></select></label>
+      <button id="modelRuleRollback" class="reload" type="button">回退到所选版本</button>
+    </div>
+  </section>
+</section>
 <div id="recordingModal" class="recording-backdrop" hidden><section class="recording-panel" role="dialog" aria-modal="true" aria-labelledby="recordingTitle"><div class="section-heading"><span>WALLPAPER ENGINE</span><h2 id="recordingTitle">录制动态场景</h2></div><p class="inventory-intro">请先在 Wallpaper Engine 中把场景设为当前桌面壁纸。录制会捕获主显示器 8 秒；请预览后再决定是否上传。</p><p id="recordingStatus" class="recording-status">准备录制</p><video id="recordingPreview" class="recording-preview" controls autoplay muted loop playsinline hidden></video><div class="recording-actions"><button id="startRecording" type="button" class="primary">录制当前桌面</button><button id="publishRecording" type="button" class="primary" hidden>确认上传到壁纸库</button><button id="closeRecording" type="button" class="reload">取消</button></div></section></div>
 <p id="actionMessage" class="action-message" role="status"></p><footer><span>管理员密码解锁后可查看完整申请记录。请保管管理机和密码。</span><span>画境工作台</span></footer></main>
-</div><script src="approval-app.js"></script></body></html>
+</div><script src="model-rules.js"></script><script src="approval-app.js"></script></body></html>

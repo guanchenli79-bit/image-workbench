@@ -93,9 +93,9 @@
       <select id="channelSelect"></select>
       <details id="advancedChannel" class="advanced-channel">
         <summary>高级设置</summary>
-        <label class="custom-channel-toggle"><input id="useCustomChannel" type="checkbox"> 使用自定义接口</label>
         <label class="field-label" for="baseUrlInput">接口地址</label>
-        <input id="baseUrlInput" type="url" placeholder="https://">
+        <input id="baseUrlInput" type="url" placeholder="https://..." aria-describedby="customAddressHint" spellcheck="false" autocomplete="off">
+        <p id="customAddressHint" class="input-note">输入服务商的 API 地址，再填写对应的 Key。保存后将同步此地址的绘图模型。</p>
       </details>
       <label class="field-label" for="apiKeyInput">API Key</label>
       <div id="keyStoredRow" class="key-stored-row" hidden><span id="keyStoredNote">已保存</span><button type="button" class="ghost-button" id="editKey">更换</button></div>

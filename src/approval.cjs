@@ -47,4 +47,12 @@ function openAnnouncementSocket(identity,machineCode){
 function adminAnnouncement(token,method='GET',body){
   return request('/v1/admin/announcement',{method,body,headers:{authorization:'Bearer '+token}});
 }
-module.exports={SERVICE_URL,loadIdentity,submitApplication,getApplication,adminList,adminAction,getAnnouncement,openAnnouncementSocket,adminAnnouncement};
+function getModelRules(identity,machineCode){
+  return request('/v1/model-rules',{headers:clientHeaders(identity,machineCode)});
+}
+function adminModelRules(token,action='read',body){
+  const route=action==='rollback'?'/v1/admin/model-rules/rollback':'/v1/admin/model-rules';
+  return request(route,{method:action==='read'?'GET':'POST',body,headers:{authorization:'Bearer '+token}});
+}
+module.exports={SERVICE_URL,loadIdentity,submitApplication,getApplication,adminList,adminAction,getAnnouncement,
+  openAnnouncementSocket,adminAnnouncement,getModelRules,adminModelRules};

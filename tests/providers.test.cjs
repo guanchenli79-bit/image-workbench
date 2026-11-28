@@ -30,7 +30,9 @@ test('标准模型列表保留可识别模型，未知模型提示需要适配',
   const known=imageListFromModels({data:[{id:'gpt-image-2-vip'},{id:'text-chat'},{id:'new-image-thing'}]},'geeknow');
   assert.deepEqual(known.models.map(x=>x.id),['gpt-image-2-vip']);
   assert.equal(known.unsupportedCount,1);
-  assert.throws(()=>imageListFromModels({data:[{id:'new-image-thing'}]},'openai-compatible'),/需要适配/);
+  const unsupported=imageListFromModels({data:[{id:'new-image-thing'}]},'openai-compatible');
+  assert.deepEqual(unsupported.models,[]);
+  assert.deepEqual(unsupported.unsupportedModels,['new-image-thing']);
   assert.deepEqual(imageListFromModels({data:[{id:'gpt-image-1.5'}]},'openai-compatible').models.map(x=>x.adapter),['legacy-images']);
 });
 
@@ -104,8 +106,11 @@ test('渠道二读取方舟生图模型，按所选尺寸和参考图协议提�
   const {CHANNELS,requestBase}=require('../src/channels.cjs');
   const {seedreamSpec}=require('../src/seedream.cjs');
   const modelId='doubao-seedream-5-5-261028';
-  assert.equal(requestBase({channelId:'two',baseUrl:'https://other.example'},normalizeBase),CHANNELS[1].baseUrl);
+  assert.equal(requestBase({channelId:'two',baseUrl:'https://other.example'}),CHANNELS[1].baseUrl);
   assert.equal(normalizeBase('https://ark.cn-beijing.volces.com/'),CHANNELS[1].baseUrl);
+  assert.equal(requestBase({channelId:'custom',baseUrl:CHANNELS[1].baseUrl+'/images/generations'}),CHANNELS[1].baseUrl);
+  assert.equal(requestBase({channelId:'custom',baseUrl:'https://grsai.dakka.com.cn/v1/api/generate'}),'https://grsai.dakka.com.cn');
+  assert.throws(()=>normalizeBase('https://ark.cn-beijing.volces.com/api/plan/v3'),/套餐路径/);
   const sync=await syncImageModels({baseUrl:CHANNELS[1].baseUrl,apiKey:'test-key'},async(url,options)=>{
     assert.equal(url,'https://ark.cn-beijing.volces.com/api/v3/models');
     assert.equal(options.headers.Authorization,'Bearer test-key');
@@ -142,10 +147,144 @@ test('渠道二读取方舟生图模型，按所选尺寸和参考图协议提�
       assert.equal(auth,'Bearer test-key');
       assert.equal(body.model,modelId);
       assert.equal(body.size,sizing.size);
+      assert.equal(body.watermark,false);
       assert.equal('n' in body,false);
     }
     assert.equal('image' in requests[0].body,false);
     assert.equal(requests[1].body.image,'data:image/png;base64,cG5n');
     assert.deepEqual(requests[2].body.image,['data:image/png;base64,cG5n','data:image/jpeg;base64,anBlZw==']);
+  }finally{await new Promise(resolve=>server.close(resolve));}
+});
+
+
+test('高级设置同步自定义 API 路径，并在同一路径提交匹配模型',async()=>{
+  const {normalizeBase}=require('../src/channels.cjs');
+  assert.equal(normalizeBase('https://relay.example.test/prefix/v2/images/generations/'),'https://relay.example.test/prefix/v2');
+  const requests=[];
+  const server=http.createServer(async(req,res)=>{
+    requests.push([req.method,req.url,req.headers.authorization]);
+    res.setHeader('Content-Type','application/json');
+    if(req.url==='/prefix/v1/models'){res.statusCode=404;res.end('{}');return;}
+    if(req.url==='/prefix/models'){
+      res.end(JSON.stringify({data:[
+        {id:'lab/draw',output_modalities:['image'],supported_endpoints:['/images/generations'],supported_sizes:['1536x1024','1024x1536']},
+        {id:'visual-chat',architecture:{input_modalities:['image'],output_modalities:['text']}},
+        {id:'chat-image',output_modalities:['image'],supported_endpoints:['/chat/completions']}
+      ]}));
+      return;
+    }
+    if(req.url==='/prefix/images/generations'){
+      const chunks=[];for await(const chunk of req)chunks.push(chunk);
+      assert.deepEqual(JSON.parse(Buffer.concat(chunks)),{model:'lab/draw',prompt:'test',size:'1536x1024'});
+      res.end(JSON.stringify({data:[{url:'https://example.com/result.png'}]}));
+      return;
+    }
+    res.statusCode=404;res.end('{}');
+  });
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+  try{
+    const settings={baseUrl:'http://127.0.0.1:'+server.address().port+'/prefix',apiKey:'relay-key'};
+    const result=await syncImageModels(settings);
+    assert.equal(result.imageApiBase,settings.baseUrl);
+    assert.deepEqual(result.models.map(model=>model.id),['lab/draw']);
+    assert.deepEqual(result.unsupportedModels,['chat-image']);
+    const [model]=result.models;
+    assert.deepEqual(model.ratios,['3:2','2:3']);
+    const item=await generateImage({...settings,imageApiBase:result.imageApiBase},{prompt:'test'},model,resolveSize(model,'3:2','',null,'default'),[]);
+    assert.equal(item.items[0].url,'https://example.com/result.png');
+    assert.deepEqual(requests,[['GET','/prefix/v1/models','Bearer relay-key'],['GET','/prefix/models','Bearer relay-key'],
+      ['POST','/prefix/images/generations','Bearer relay-key']]);
+  }finally{await new Promise(resolve=>server.close(resolve));}
+  let calls=0;
+  await assert.rejects(syncImageModels({baseUrl:'https://relay.example.test',apiKey:'invalid'},async()=>{
+    calls++;
+    return {status:401,ok:false};
+  }),/拒绝了此 API Key/);
+  assert.equal(calls,1);
+});
+
+test('硅基流动专用模型列表、尺寸和生成结果格式',async()=>{
+  const fixture={data:[{id:'Kwai-Kolors/Kolors'},{id:'Qwen/Qwen-Image-Edit-2509'},{id:'another-unknown'}]};
+  const result=await syncImageModels({baseUrl:'https://api.siliconflow.cn/v1',apiKey:'silicon-key'},async(url,options)=>{
+    assert.equal(url,'https://api.siliconflow.cn/v1/models?type=image');
+    assert.equal(options.headers.Authorization,'Bearer silicon-key');
+    return {status:200,ok:true,json:async()=>fixture};
+  });
+  const [kolors,edit]=result.models;
+  assert.deepEqual(result.unsupportedModels,['another-unknown']);
+  const requests=[];
+  const server=http.createServer(async(req,res)=>{
+    const chunks=[];for await(const chunk of req)chunks.push(chunk);
+    requests.push([req.url,JSON.parse(Buffer.concat(chunks))]);
+    res.setHeader('Content-Type','application/json');
+    res.end(JSON.stringify({images:[{url:'https://example.com/silicon.png'}]}));
+  });
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+  try{
+    const settings={baseUrl:'http://127.0.0.1:'+server.address().port,apiKey:'silicon-key'};
+    const input={prompt:'test'};
+    const ref={mime:'image/png',buffer:Buffer.from('reference')};
+    const plain=await generateImage(settings,input,kolors,resolveSize(kolors,'9:16','',null,'default'),[]);
+    assert.equal(plain.items[0].url,'https://example.com/silicon.png');
+    assert.deepEqual(requests[0],['/v1/images/generations',{model:kolors.id,prompt:'test',image_size:'720x1280'}]);
+    await generateImage(settings,input,edit,resolveSize(edit,'auto','',null,'default'),[ref,ref,ref]);
+    const [,body]=requests[1];
+    assert.equal('image_size' in body,false);
+    assert.ok(body.image.startsWith('data:image/png;base64,'));
+    assert.equal(body.image3,body.image);
+    await assert.rejects(generateImage(settings,input,edit,{},[ref,ref,ref,ref]),/超过模型/);
+    assert.equal(requests.length,2);
+  }finally{await new Promise(resolve=>server.close(resolve));}
+});
+
+
+test('ModelGo Seedream 5.5 从普通目录项恢复画幅和分辨率，按选中尺寸发送请求',async()=>{
+  const modelId='doubao-seedream-5.5';
+  const data=[{id:modelId,output_modalities:['image']}];
+  const result=await syncImageModels({baseUrl:'https://api.modelgo.ai/v1',apiKey:'fixture-key'},async(url,options)=>{
+    assert.equal(url,'https://api.modelgo.ai/v1/models');
+    assert.equal(options.headers.Authorization,'Bearer fixture-key');
+    return {status:200,ok:true,json:async()=>({data})};
+  });
+  const [model]=result.models;
+  assert.equal(model.id,modelId);
+  assert.equal(model.adapter,'modelgo-seedream-image');
+  assert.deepEqual(model.resolutions,['1K','1.5K','2K']);
+  assert.equal(model.defaultResolution,'2K');
+  assert.deepEqual(model.ratios,['1:1','4:3','3:4','16:9','9:16','3:2','2:3','21:9']);
+  assert.equal(imageListFromModels({data},'openai-compatible','https://another.example/v1').models[0].adapter,'standard-image');
+  assert.equal(imageListFromModels({data},'openai-compatible','https://api.modelgo.ai/api/v3').models[0].adapter,'standard-image');
+
+  const requests=[];
+  const server=http.createServer(async(req,res)=>{
+    const chunks=[];for await(const chunk of req)chunks.push(chunk);
+    requests.push({method:req.method,route:req.url,body:JSON.parse(Buffer.concat(chunks))});
+    res.setHeader('Content-Type','application/json');
+    res.end(JSON.stringify({data:[{url:'https://example.com/result.png'}]}));
+  });
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+  try{
+    const settings={baseUrl:'http://127.0.0.1:'+server.address().port,apiKey:'fixture-key'};
+    const ref={mime:'image/png',buffer:Buffer.from('fixture')};
+    const landscape=resolveSize(model,'16:9','',null,'2K');
+    const portrait=resolveSize(model,'9:16','',null,'1.5K');
+    const auto=resolveSize(model,'auto','竖屏',null,'1K');
+    assert.equal(landscape.size,'2816x1584');
+    assert.equal(portrait.size,'1152x2048');
+    assert.equal(auto.size,'720x1280');
+    await generateImage(settings,{prompt:'横屏'},model,landscape,[]);
+    await generateImage(settings,{prompt:'竖屏'},model,portrait,[ref]);
+    for(const req of requests){
+      assert.equal(req.method,'POST');
+      assert.equal(req.route,'/v1/images/generations');
+      assert.equal(req.body.model,modelId);
+      assert.equal(req.body.watermark,false);
+      assert.equal('n' in req.body,false);
+      assert.equal('output_format' in req.body,false);
+    }
+    assert.equal(requests[0].body.size,'2816x1584');
+    assert.equal('image' in requests[0].body,false);
+    assert.equal(requests[1].body.size,'1152x2048');
+    assert.ok(requests[1].body.image.startsWith('data:image/png;base64,'));
   }finally{await new Promise(resolve=>server.close(resolve));}
 });

@@ -29,7 +29,13 @@ function seedreamSpec(entry) {
     nativeOutputFormat};
 }
 
+function modelGoSeedreamSpec(id, apiBase) {
+  if (apiBase !== 'https://api.modelgo.ai/v1' || id !== 'doubao-seedream-5.5') return null;
+  const upstream = seedreamSpec({id:'doubao-seedream-5-5-261028'});
+  return {...upstream,id,adapter:'modelgo-seedream-image',refs:true,maxRefs:10};
+}
+
 function seedreamSize(resolution, ratio) {
   return SIZES[resolution]?.[RATIOS.indexOf(ratio)];
 }
-module.exports = {seedreamSpec, seedreamSize};
+module.exports = {seedreamSpec, modelGoSeedreamSpec, seedreamSize};

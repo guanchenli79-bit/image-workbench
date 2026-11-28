@@ -1,3 +1,6 @@
+import {currentRules,ruleHistory,publishRules} from './model-rule-store.mjs';
+import rules from '../src/model-rules.cjs';
+
 const json=(body,status=200)=>new Response(JSON.stringify(body),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'}});
 const fail=(message,status=400)=>json({error:message},status);
 const now=()=>new Date().toISOString();
@@ -175,14 +178,17 @@ async function currentAnnouncement(db) {
 function announcementHub(env) {
   return env.ANNOUNCEMENTS.get(env.ANNOUNCEMENTS.idFromName('current'));
 }
-async function clientAnnouncement(request,env,stream) {
+async function requireApprovedDevice(request,env) {
   const credentials=await deviceCredentials(request);
   const row=await env.DB.prepare(
     'SELECT status, expires_at, secret_hash, machine_hash FROM applications WHERE device_id=? ORDER BY created_at DESC LIMIT 1'
   ).bind(credentials.deviceId).first();
-  if(row?.status!=='approved'||Date.parse(row.expires_at)<=Date.now()||
+  if(row?.status!=='approved'||!(Date.parse(row.expires_at)>Date.now())||
      !matchesConstantTime(row.secret_hash,credentials.secretHash)||row.machine_hash!==credentials.machineHash)
-    return fail('当前设备未通过审批',403);
+    throw Object.assign(new Error('当前设备未通过审批'),{status:403});
+}
+async function clientAnnouncement(request,env,stream) {
+  await requireApprovedDevice(request,env);
   if(!stream)return json({announcement:await currentAnnouncement(env.DB)});
   if(request.headers.get('upgrade')?.toLowerCase()!=='websocket')return fail('需要 WebSocket 连接',426);
   return announcementHub(env).fetch('https://internal/subscribe',{headers:{upgrade:'websocket'}});
@@ -210,7 +216,23 @@ async function manageAnnouncement(request,env,context) {
   return json({announcement},request.method==='POST'?201:200);
 }
 
-// The socket carries only a change signal. Reading the text always checks the device again.
+async function clientModelRules(request,env) {
+  await requireApprovedDevice(request,env);
+  return json({manifest:await currentRules(env.DB)});
+}
+async function manageModelRules(request,env,context,rollback) {
+  if(request.method==='GET'&&!rollback){
+    const [manifest,history]=await Promise.all([currentRules(env.DB),ruleHistory(env.DB)]);
+    return json({manifest,history});
+  }
+  if(request.method!=='POST')return fail('请求方式不支持',405);
+  const input=await bodyJson(request,rules.MAX_RULE_BYTES);
+  const manifest=await publishRules(env.DB,input,rollback);
+  context.waitUntil(announcementHub(env).fetch('https://internal/notify-model-rules',{method:'POST'}).catch(()=>{}));
+  return json({manifest,history:await ruleHistory(env.DB)},201);
+}
+
+// The socket carries only change signals. Reading the content checks the device again.
 export class AnnouncementHub {
   constructor(state){this.state=state;}
   fetch(request){
@@ -221,9 +243,10 @@ export class AnnouncementHub {
       server.send('changed');
       return new Response(null,{status:101,webSocket:client});
     }
-    if(route==='/notify'&&request.method==='POST'){
+    if(['/notify','/notify-model-rules'].includes(route)&&request.method==='POST'){
+      const message=route==='/notify'?'changed':'model-rules-changed';
       for(const socket of this.state.getWebSockets()){
-        try{socket.send('changed');}catch{}
+        try{socket.send(message);}catch{}
       }
       return new Response(null,{status:204});
     }
@@ -244,10 +267,13 @@ export default {async fetch(request,env,context){
     if(url.pathname==='/v1/health'&&request.method==='GET')return json({ok:true,version:1});
     if(url.pathname==='/v1/applications'&&request.method==='POST')return await apply(request,env);
     if(url.pathname==='/v1/status'&&request.method==='GET')return await status(request,env);
+    if(url.pathname==='/v1/model-rules'&&request.method==='GET')return await clientModelRules(request,env);
     if(url.pathname==='/v1/announcement'&&request.method==='GET')return await clientAnnouncement(request,env,false);
     if(url.pathname==='/v1/announcement/live'&&request.method==='GET')return await clientAnnouncement(request,env,true);
     if(url.pathname.startsWith('/v1/admin/')){
       await requireAdmin(request,env);
+      if(url.pathname==='/v1/admin/model-rules')return await manageModelRules(request,env,context,false);
+      if(url.pathname==='/v1/admin/model-rules/rollback')return await manageModelRules(request,env,context,true);
       if(url.pathname==='/v1/admin/announcement')return await manageAnnouncement(request,env,context);
       if(url.pathname==='/v1/admin/applications'&&request.method==='GET')return await adminList(request,env);
       const match=/^\/v1\/admin\/applications\/([0-9a-f-]{36})\/(approve|reject|unbind|rebind|expiry|rename|delete)$/.exec(url.pathname);

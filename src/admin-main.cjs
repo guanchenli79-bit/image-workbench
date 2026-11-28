@@ -1,7 +1,9 @@
 const {app,BrowserWindow,ipcMain,dialog,clipboard,desktopCapturer,session} = require('electron');
 const path = require('node:path');
 const fsp = require('node:fs/promises');
-const {adminList,adminAction,adminAnnouncement}=require('./approval.cjs');
+const {adminList,adminAction,adminAnnouncement,adminModelRules}=require('./approval.cjs');
+const {normalizeRuleSet,previewRule}=require('./model-rules.cjs');
+const {modelGoSeedreamSpec,seedreamSize}=require('./seedream.cjs');
 const {readManifest,addWallpaper,addRecordedWallpaper,selectWallpaper,removeWallpaper}=require('./admin-wallpapers.cjs');
 const {AdminVault} = require('./admin-vault.cjs');
 const {adminApprovalToken}=require('./admin-approval-token.cjs');
@@ -50,6 +52,26 @@ app.whenReady().then(()=>{
     authorized(event);
     if(typeof id!=='string'||!/^[0-9a-f-]{36}$/.test(id))throw new Error('公告编号无效');
     return adminAnnouncement(adminToken(),'DELETE',{id});
+  });
+  ipcMain.handle('admin:model-rules',event=>{authorized(event);return adminModelRules(adminToken());});
+  ipcMain.handle('admin:model-rules-sample',event=>{
+    authorized(event);
+    const model=modelGoSeedreamSpec('doubao-seedream-5.5','https://api.modelgo.ai/v1');
+    return {baseUrl:'https://api.modelgo.ai',modelId:model.id,label:'Seedream 5.5',protocol:'seedream-json',
+      modelsPath:'/v1/models',generationPath:'/v1/images/generations',maxRefs:10,watermark:false,
+      sizes:Object.fromEntries(model.resolutions.map(tier=>[tier,Object.fromEntries(model.ratios.map(ratio=>[ratio,seedreamSize(tier,ratio)]))])),
+      defaultResolution:model.defaultResolution};
+  });
+  ipcMain.handle('admin:model-rules-preview',(event,input)=>{
+    authorized(event);return previewRule(input?.rule,input?.ratio,input?.resolution);
+  });
+  ipcMain.handle('admin:model-rules-publish',(event,input)=>{
+    authorized(event);
+    return adminModelRules(adminToken(),'publish',{expectedRevision:input?.expectedRevision,config:normalizeRuleSet(input?.config)});
+  });
+  ipcMain.handle('admin:model-rules-rollback',(event,input)=>{
+    authorized(event);
+    return adminModelRules(adminToken(),'rollback',{expectedRevision:input?.expectedRevision,targetRevision:input?.targetRevision});
   });
   ipcMain.handle('admin:legacy-history',event=>{authorized(event);return vault.snapshot().bindings;});
   ipcMain.handle('admin:wallpapers',async event=>{authorized(event);return (await readManifest()).manifest;});

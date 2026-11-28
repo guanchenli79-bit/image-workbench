@@ -60,11 +60,14 @@ function resolveSize(model, presetId, prompt, reference, resolutionId) {
   const allowed = model.resolutions || ['default'];
   const resolution = resolutionId || model.defaultResolution || allowed[0];
   if (!allowed.includes(resolution)) throw new Error(`此模型不支持 ${resolution} 分辨率`);
+  if (model.defaultSizing) return {requested:picked.dimensions,desiredRatio:desired,ratio:null,resolution,size:null,adjusted:false};
   let size = null;
-  if (model.adapter === 'grsai-image') {
+  if (model.adapter === 'managed-image') {
+    size = model.managedRule.sizes[resolution][actualRatio];
+  } else if (model.adapter === 'grsai-image') {
     if(model.grsaiFamily==='gpt'&&model.resolutions.length>1)
       size=grsaiSizes[actualRatio]?.[['1K','2K','4K'].indexOf(resolution)]||null;
-  } else if (model.adapter === 'ark-image') {
+  } else if (model.adapter === 'ark-image' || model.adapter === 'modelgo-seedream-image') {
     size = seedreamSize(resolution, actualRatio);
   } else if (model.adapter === 'images') {
     let table;
@@ -73,10 +76,13 @@ function resolveSize(model, presetId, prompt, reference, resolutionId) {
     else if (model.id.startsWith('gpt-image-2.5-')) table = resolution === '4K' ? pro4K : resolution === '2K' ? pro2K : base;
     else table = /seedream|grok/.test(model.id) ? seedream : base;
     size = table[actualRatio];
+  } else if (model.adapter === 'standard-image' || model.adapter === 'siliconflow-image') {
+    size = model.imageSizes?.[actualRatio] || null;
   } else if (model.adapter === 'legacy-images') {
+    const apiName=model.id.split('/').at(-1);
     size = legacy[actualRatio];
-    if(model.id.startsWith('gpt-image-1'))size={'1:1':'1024x1024','3:2':'1536x1024','2:3':'1024x1536'}[actualRatio];
-    if (model.id === 'dall-e-2') size = '1024x1024';
+    if(apiName.startsWith('gpt-image-1'))size={'1:1':'1024x1024','3:2':'1536x1024','2:3':'1024x1536'}[actualRatio];
+    if (apiName === 'dall-e-2') size = '1024x1024';
   } else if (model.adapter === 'task-image') {
     size = resolution === '4K' ? vip4K[actualRatio] : resolution === '2K' ? pro2K[actualRatio] :
       picked.dimensions === 'auto' ? (base[actualRatio] || '1024x1024') : picked.dimensions;

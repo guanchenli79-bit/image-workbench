@@ -1,19 +1,9 @@
 const path = require('node:path');
 const { Blob } = require('node:buffer');
 const { networkFetch } = require('./network.cjs');
-const { ARK_HOST } = require('./channels.cjs');
+const { normalizeBase, providerFor, imageApiUrl } = require('./channels.cjs');
+const {ruleUrl,makeImageRequest} = require('./model-rules.cjs');
 const URL_REFERENCE_IMAGE_MODELS = new Set(['gpt-image-2','gpt-image-2-pro','gpt-image-2.5-flare','gpt-image-2.5-sunburst','gpt-image-2-vip']);
-
-function normalizeBase(value) {
-  const raw = String(value || 'https://www.geeknow.top').trim().replace(/\/+$/, '');
-  const url = new URL(raw);
-  if (!['https:', 'http:'].includes(url.protocol)) throw new Error('接口地址必须以 https:// 开头');
-  if (url.protocol === 'http:' && !['localhost','127.0.0.1','::1'].includes(url.hostname)) throw new Error('为保护 API Key，远程接口地址必须使用 HTTPS');
-  if (url.username || url.password || url.search || url.hash) throw new Error('接口地址请只填写基础 URL');
-  if (url.hostname === ARK_HOST && ['', '/', '/api/v3'].includes(url.pathname)) url.pathname = '/api/v3';
-  if(/\/v1\/?$/.test(url.pathname))url.pathname=url.pathname.replace(/\/v1\/?$/,'')||'/';
-  return url.href.replace(/\/+$/, '');
-}
 
 function errorText(data, status) {
   if(typeof data?.message==='string' && /<!doctype|<html|<body|<head/i.test(data.message))
@@ -28,8 +18,12 @@ function errorText(data, status) {
 
 async function requestJson(settings, route, options = {}) {
   const base = normalizeBase(settings.baseUrl);
+  const isCompatibleImageRoute = providerFor(base) === 'openai-compatible' && route.startsWith('/v1/images/');
+  const url = isCompatibleImageRoute ? imageApiUrl(base, route.slice(3), settings.imageApiBase) : base + route;
+  return requestJsonAt(settings,url,options);
+}
+async function requestJsonAt(settings,url,options={}) {
   if (!settings.apiKey) throw new Error('请先设置 API Key');
-  const url = base + route;
   const { allowTaskError = false, ...requestOptions } = options;
   const response = await networkFetch(url, {
     ...requestOptions,
@@ -38,6 +32,7 @@ async function requestJson(settings, route, options = {}) {
       ...(!(requestOptions.body instanceof FormData) ? {'Content-Type':'application/json'} : {}),
       ...requestOptions.headers
     },
+    redirect:'error',
     signal: requestOptions.signal || AbortSignal.timeout(180000)
   });
   const body = await response.text();
@@ -51,6 +46,7 @@ async function requestJson(settings, route, options = {}) {
 }
 
 function imageItems(data) {
+  if (Array.isArray(data?.images)) return data.images.map(x=>({url:x?.url,mime:'image/png'})).filter(x=>x.url);
   if (Array.isArray(data?.results)) return data.results.map(x=>({url:typeof x==='string'?x:x?.url,mime:'image/png'})).filter(x=>x.url);
   if (Array.isArray(data?.data)) return data.data.map(x => ({ url:x.url, b64:x.b64_json, mime:'image/png' })).filter(x => x.url || x.b64);
   const parts = data?.candidates?.flatMap(x => x?.content?.parts || []) || [];
@@ -108,16 +104,44 @@ async function uploadReferences(settings, references, modelName) {
 
 async function generateImage(settings, input, model, sizing, references) {
   const { prompt } = input;
-  if (model.adapter === 'ark-image') {
+  if (model.adapter === 'managed-image') {
+    const rule=model.managedRule;
+    if(rule.baseUrl!==normalizeBase(settings.baseUrl))throw new Error('接口规则与当前保存 Key 的地址不匹配');
+    const spec=makeImageRequest(rule,{prompt,size:sizing.size,references:references.map(dataUri)});
+    const url=ruleUrl(settings.baseUrl,spec.path,spec.form?'edit':'generate');
+    let body;
+    if(spec.form){
+      body=new FormData();
+      for(const [name,value] of Object.entries(spec.form))body.append(name,value);
+      for(const ref of references)body.append('image',new Blob([ref.buffer],{type:ref.mime}),ref.name);
+    }else body=JSON.stringify(spec.body);
+    const data=await requestJsonAt(settings,url,{method:'POST',body});
+    const items=imageItems(data);
+    if(!items.length)throw new Error(data?.data?.[0]?.error?.message||'接口没有返回图片，请核对已发布的接口规则');
+    return {kind:'complete',items};
+  }
+  if (model.adapter === 'ark-image' || model.adapter === 'modelgo-seedream-image') {
     if (!sizing.size) throw new Error('此模型不支持所选尺寸');
-    const body = {model:model.id,prompt,size:sizing.size,response_format:'url',watermark:true};
-    if (model.nativeOutputFormat) body.output_format = 'png';
-    else body.sequential_image_generation = 'disabled';
+    const body = {model:model.id,prompt,size:sizing.size,response_format:'url',watermark:false};
+    const isArk = model.adapter === 'ark-image';
+    if (isArk && model.nativeOutputFormat) body.output_format = 'png';
+    if (isArk && !model.nativeOutputFormat) body.sequential_image_generation = 'disabled';
     if (references.length === 1) body.image = dataUri(references[0]);
     if (references.length > 1) body.image = references.map(dataUri);
-    const data = await requestJson(settings,'/images/generations',{method:'POST',body:JSON.stringify(body)});
+    const route = isArk ? '/images/generations' : '/v1/images/generations';
+    const data = await requestJson(settings,route,{method:'POST',body:JSON.stringify(body)});
     const items = imageItems(data);
     if (!items.length) throw new Error(data?.data?.[0]?.error?.message || '接口没有返回图片');
+    return {kind:'complete',items};
+  }
+  if (model.adapter === 'siliconflow-image') {
+    if (references.length > (model.maxRefs || 0)) throw new Error('参考图超过模型支持的数量');
+    const body = {model:model.id,prompt};
+    if (sizing.size) body.image_size = sizing.size;
+    for (const [index,reference] of references.entries()) body[index ? 'image'+(index+1) : 'image'] = dataUri(reference);
+    const data = await requestJson(settings,'/v1/images/generations',{method:'POST',body:JSON.stringify(body)});
+    const items = imageItems(data);
+    if (!items.length) throw new Error('接口没有返回图片');
     return {kind:'complete',items};
   }
   if (model.adapter === 'grsai-image') {
@@ -175,13 +199,22 @@ async function generateImage(settings, input, model, sizing, references) {
     if (!taskId) throw new Error('接口未返回任务 ID');
     return {kind:'task',taskId:String(taskId),taskAdapter:'video'};
   }
-  if (model.adapter === 'legacy-images' && references.length) {
+  if (['legacy-images','standard-image'].includes(model.adapter) && references.length) {
     const form = new FormData();
-    form.append('model',model.id); form.append('prompt',prompt); form.append('size',sizing.size);
+    form.append('model',model.id); form.append('prompt',prompt);
+    if(sizing.size)form.append('size',sizing.size);
     for (const ref of references) form.append('image',new Blob([ref.buffer],{type:ref.mime}),ref.name);
     const data = await requestJson(settings,'/v1/images/edits',{method:'POST',body:form});
     const items = imageItems(data);
     if (!items.length) throw new Error('接口没有返回图片');
+    return {kind:'complete',items};
+  }
+  if (model.adapter === 'standard-image') {
+    const body = {model:model.id,prompt};
+    if(sizing.size)body.size = sizing.size;
+    const data = await requestJson(settings,'/v1/images/generations',{method:'POST',body:JSON.stringify(body)});
+    const items = imageItems(data);
+    if(!items.length)throw new Error('此接口未按标准格式返回图片，请核对生图接口文档');
     return {kind:'complete',items};
   }
   if (URL_REFERENCE_IMAGE_MODELS.has(model.id) && references.length) {
@@ -197,7 +230,7 @@ async function generateImage(settings, input, model, sizing, references) {
   }
   const body = {model:model.id,prompt,n:1,size:sizing.size};
   if (references.length) body.image = references.map(ref=>ref.buffer.toString('base64'));
-  if (model.adapter === 'legacy-images' && model.id.startsWith('dall-e-')) body.response_format = 'url';
+  if (model.adapter === 'legacy-images' && model.id.split('/').at(-1).startsWith('dall-e-')) body.response_format = 'url';
   const data = await requestJson(settings,'/v1/images/generations',{method:'POST',body:JSON.stringify(body)});
   const items = imageItems(data);
   if (!items.length) throw new Error('接口没有返回图片，请检查模型输出或通道状态');

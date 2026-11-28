@@ -4,6 +4,7 @@ const message=(value,error=false)=>{$('actionMessage').textContent=value;$('acti
 let setupMode=false,applications=[],recordingName='',recordedBlob=null,recordedUrl='',recordingBusy=false;
 const statusText={pending:'待审批',approved:'已绑定',rejected:'已驳回',unbound:'已解绑',expired:'已到期'};
 function showAuth(needsSetup){
+  window.resetRuleConsole();
   setupMode=needsSetup;$('authPage').hidden=false;$('workspace').hidden=true;$('lockButton').hidden=true;
   $('authTitle').textContent=needsSetup?'首次设置管理员密码':'管理员登录';
   $('authIntro').textContent=needsSetup?'设置至少 8 位密码，保留旧版加密管理库。':'输入管理员密码后，查看申请和管理绑定。';
@@ -20,6 +21,7 @@ function setPage(id){
   if(id==='wallpapersPage')loadWallpapers();
   if(id==='legacyPage')loadLegacy();
   if(id==='announcementsPage')loadAnnouncement();
+  if(id==='modelRulesPage')window.refreshRuleConsole();
 }
 async function act(button,task,success){
   button.disabled=true;try{const result=await task();if(result){message(success);return result;}return null;}

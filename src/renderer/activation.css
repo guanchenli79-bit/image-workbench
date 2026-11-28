@@ -34,8 +34,6 @@
 [data-theme="dark"] .channel-modal select{background:#202735;border-color:#43506a;color:#edf2ff}
 .advanced-channel{margin-top:14px;font-size:12px}
 .advanced-channel summary{cursor:pointer;padding:4px 0;color:var(--muted,#69748a)}
-.custom-channel-toggle{display:flex;align-items:center;gap:8px;margin-top:12px}
-.channel-modal input[type="checkbox"]{width:16px;height:16px;accent-color:var(--accent)}
 .key-stored-row{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:13px}
 .key-stored-row[hidden],.password-wrap[hidden]{display:none}
 .channel-modal .input-note{min-height:22px;font-size:12px}

@@ -45,6 +45,7 @@ function renderModelSync(){
   $('modelCount').textContent=count+' 个可选模型';
   $('modelSyncStatus').textContent=!settings.hasKey?'请先保存当前渠道的 API Key。':
     state.view==='video'&&model?.adapter==='unsupported'?'当前渠道的视频接口待适配。':
+    state.view==='image'&&model?.adapter==='managed-image'?'接口规则版本 '+settings.ruleRevision+' · 尺寸与参考图参数已同步。':
     settings.syncedAt?'上次同步 '+new Date(settings.syncedAt).toLocaleString('zh-CN')+
       (settings.unsupportedCount?' · '+settings.unsupportedCount+' 个模型待适配':''):
     count?'点击「同步模型」可刷新列表。':'当前渠道没有可用模型，请同步模型。';
@@ -325,8 +326,9 @@ document.addEventListener('scroll',()=>{if(openSmoothSelect)positionSmoothSelect
 let keyInfoRevision=0;
 let channelBusy=false;
 let channelHasKey=false;
+let presetBeforeAdvanced='';
 function channelInput(){
-  return $('useCustomChannel').checked?
+  return $('advancedChannel').open?
     {channelId:'custom',baseUrl:$('baseUrlInput').value.trim()}:{channelId:$('channelSelect').value};
 }
 function resetChannelKey(){
@@ -351,16 +353,15 @@ async function inspectChannelKey(){
   if(!input.channelId||input.channelId==='custom'&&!input.baseUrl)return;
   try{
     const info=await window.workbench.keyInfo(input);
-    if(revision===keyInfoRevision&&$('settingsDialog').open)showChannelKey(info);
+    if(revision===keyInfoRevision&&$('settingsDialog').open&&!$('apiKeyInput').value)showChannelKey(info);
   }catch{}
 }
 function updateChannelPicker(){
-  const custom=$('useCustomChannel').checked;
+  const custom=$('advancedChannel').open;
   $('baseUrlInput').disabled=!custom||channelBusy;
   $('baseUrlInput').required=custom;
   $('channelSelect').required=!custom;
   $('channelSelect').disabled=channelBusy;
-  $('useCustomChannel').disabled=channelBusy;
   if(custom)$('channelSelect').value='';
 }
 function openChannelSettings(){
@@ -376,9 +377,9 @@ function openChannelSettings(){
   const custom=state.settings.channelId==='custom';
   const configuredCustom=custom&&state.settings.hasKey;
   $('advancedChannel').open=configuredCustom;
-  $('useCustomChannel').checked=configuredCustom;
   $('baseUrlInput').value=state.settings.customBaseUrl;
-  select.value=custom?(configuredCustom?'':state.settings.channels[0]?.id||''):state.settings.channelId;
+  presetBeforeAdvanced=custom?state.settings.channels[0]?.id||'':state.settings.channelId;
+  select.value=configuredCustom?'':presetBeforeAdvanced;
   $('channelMessage').textContent='';
   resetChannelKey();
   updateChannelPicker();
@@ -419,13 +420,19 @@ function bindChannelSettings(){
     void inspectChannelKey();
   };
   $('channelSelect').addEventListener('change',()=>{
-    $('useCustomChannel').checked=false;
+    presetBeforeAdvanced=$('channelSelect').value;
     $('advancedChannel').open=false;
     selectionChanged();
   });
-  $('useCustomChannel').addEventListener('change',()=>{
-    if(!$('useCustomChannel').checked)$('channelSelect').selectedIndex=1;
+  $('advancedChannel').querySelector('summary').addEventListener('click',event=>{
+    event.preventDefault();
+    if(channelBusy)return;
+    const advanced=$('advancedChannel');
+    if(advanced.open)$('channelSelect').value=presetBeforeAdvanced;
+    else presetBeforeAdvanced=$('channelSelect').value||presetBeforeAdvanced;
+    advanced.open=!advanced.open;
     selectionChanged();
+    if(advanced.open)$('baseUrlInput').focus();
   });
   $('baseUrlInput').addEventListener('input',()=>{
     keyInfoRevision++;
@@ -449,15 +456,28 @@ function bindChannelSettings(){
       if(result.syncError){
         resetChannelKey();
         showChannelKey(result.settings);
-        $('channelMessage').textContent='设置已保存，模型同步失败：'+result.syncError;
+        $('channelMessage').textContent='设置已保存，模型目录读取失败：'+result.syncError+
+          (result.settings.managedModelCount?'。管理端配置的模型仍可选择。':'');
+        return;
+      }
+      if(!result.imageModels.length){
+        resetChannelKey();
+        showChannelKey(result.settings);
+        $('channelMessage').textContent=result.settings.unsupportedCount?
+          '地址和 Key 已保存。该接口返回的 '+result.settings.unsupportedCount+' 个生图模型待适配。':
+          '地址和 Key 已保存。模型列表中没有可调用的绘图模型。';
         return;
       }
       $('settingsDialog').close();
-      toast(result.settings.hasKey?'设置已保存，已同步 '+result.imageModels.length+' 个可选模型':'已切换接口');
+      toast('设置已保存，已同步 '+result.imageModels.length+' 个可选模型');
     });
   });
   $('verifyKeyButton').addEventListener('click',()=>withChannelForm(async input=>{
     const result=await window.workbench.verifySettings(input);
+    if(!result.modelCount){
+      $('channelMessage').textContent='已读取模型列表，暂无已适配的绘图模型。';
+      return;
+    }
     $('channelMessage').textContent=result.authVerified?
       'Key 可读取模型列表，找到 '+result.modelCount+' 个已适配模型。':
       '已读取 '+result.modelCount+' 个公开模型。Key 的生成权限会在实际生成时核验。';
@@ -524,7 +544,7 @@ function renderResolutions(){
 function renderRatios() {
   const grid=$('ratioGrid');grid.replaceChildren();
   const model=currentModel();
-  const options=model&&model.adapter!=='unsupported'?state.presets.filter(preset=>preset.id==='auto'||model.ratios.includes(preset.id)):[];
+  const options=model&&model.adapter!=='unsupported'?state.presets.filter(preset=>preset.id==='auto'||(!model.defaultSizing&&model.ratios.includes(preset.id))):[];
   if(!options.some(preset=>preset.id===state.presetId))state.presetId='auto';
   for(const preset of options){
     const option=document.createElement('option');option.value=preset.id;
@@ -544,7 +564,7 @@ async function updateSizeNote() {
   }
   try{const result=await window.workbench.resolveSize({modelId:model.id,presetId:state.presetId,resolutionId:state.view==='image'?state.resolutionId:undefined,prompt:$('promptInput').value,referenceDimensions:referenceDimensions()});
     if(!result||request!==sizeNoteRequest)return;
-    const label=result.size?`实际提交尺寸：${result.size} · 比例 ${result.ratio}`:`实际提交比例：${result.ratio}`;
+    const label=model.defaultSizing?'输出尺寸由接口决定':result.size?`实际提交尺寸：${result.size} · 比例 ${result.ratio}`:`实际提交比例：${result.ratio}`;
     (view==='video'?$('videoResolvedSize'):$('resolvedSize')).textContent=label+(result.adjusted?'（已按模型能力适配）':'');
   }catch{}
 }
@@ -662,7 +682,7 @@ async function saveMedia(record,index){try{const done=await window.workbench.sav
 async function doGenerate(){if(!state.settings.hasKey){openChannelSettings();return;}const model=currentModel();if(!model||model.adapter==='unsupported')return;const prompt=$('promptInput').value.trim();if(!prompt){toast('请先填写提示词');$('promptInput').focus();return;}if(model.requiredRefs&&!state.references.length){toast('该模型需要参考图');return;}if(state.references.length&&!model.refs){toast('该模型不支持参考图');return;}
   if(Date.now()-state.lastSubmitAt<600)return;
   state.lastSubmitAt=Date.now();
-  const input={type:state.view,modelId:model.id,prompt,presetId:state.presetId,resolutionId:state.view==='image'?state.resolutionId:undefined,referenceIds:state.references.map(r=>r.id),referenceDimensions:referenceDimensions(),seconds:Number($('secondsSelect').value)};
+  const input={type:state.view,modelId:model.id,prompt,presetId:state.presetId,resolutionId:state.view==='image'?state.resolutionId:undefined,referenceIds:state.references.map(r=>r.id),referenceDimensions:referenceDimensions(),ruleRevision:state.settings.ruleRevision,seconds:Number($('secondsSelect').value)};
   state.activeSubmissions++;$('generateButton').innerHTML=`<span>✦</span> 继续生成 · ${state.activeSubmissions} 个提交中 <span class="button-arrow">↗</span>`;
   try{const result=await window.workbench.generate(input);toast(result.status==='cleared'?'任务已从历史中清除':result.status==='complete'?'生成完成，请及时保存作品':'任务已提交，可继续创建其他任务');state.history=await window.workbench.history();renderHistory();}
   catch(e){toast((e.message||'生成失败').replace(/^Error invoking remote method '[^']+': Error: /,''));state.history=await window.workbench.history();renderHistory();}
@@ -718,7 +738,7 @@ function bindEvents(){document.querySelectorAll('.nav-item').forEach(b=>b.addEve
   document.addEventListener('drop',async event=>{if(hasGeneratedImage(event)||!hasDraggedFiles(event))return;event.preventDefault();dropzone.classList.remove('drag-active');if(!$('activationScreen').hidden||$('announcementDialog').open||$('creationView').hidden||$('settingsDialog').open||$('updateDialog').open||$('imagePreviewDialog').open)return;try{await addDroppedReferences(event.dataTransfer.files);}catch(error){toast(error.message);}});
   $('generateButton').addEventListener('click',doGenerate);
   bindChannelSettings();
-  $('syncModelsButton').addEventListener('click',async()=>{const button=$('syncModelsButton');button.disabled=true;button.textContent='同步中…';try{const result=await window.workbench.syncModels();applyModelSnapshot(result);toast('已同步 '+result.imageModels.length+' 个生图模型'+(result.unsupportedCount?'；'+result.unsupportedCount+' 个需要适配':''));}catch(error){toast('同步失败：'+error.message);}finally{button.disabled=false;button.textContent='同步模型 ↻';}});
+  $('syncModelsButton').addEventListener('click',async()=>{const button=$('syncModelsButton');button.disabled=true;button.textContent='同步中…';try{const result=await window.workbench.syncModels();applyModelSnapshot(result);toast('已同步 '+result.imageModels.length+' 个生图模型'+(result.settings.unsupportedCount?'；'+result.settings.unsupportedCount+' 个需要适配':''));}catch(error){toast('模型目录读取失败：'+error.message+(state.settings.managedModelCount?'。管理端配置的模型仍可选择。':''));}finally{button.disabled=false;button.textContent='同步模型 ↻';}});
   window.workbench.onModels(snapshot=>{applyModelSnapshot(snapshot);});
   window.workbench.onModelSyncError(error=>toast('自动同步模型失败：'+error));
   window.workbench.onHistory(data=>{state.history=data;renderHistory();});
