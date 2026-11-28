@@ -54,6 +54,14 @@
       "path": "wallpapers/assets/wall-9dc50605-ed14-4dee-9ade-a2ab89acc7f5.png",
       "sha256": "6bd46185bd51a3b8724eaeec74e505a11cf06e63c967611eaceeb38d213bc041",
       "size": 1518877
+    },
+    {
+      "id": "wall-c4ab1dfc-2528-458c-bd53-a04964d3fd00",
+      "name": "0e7eef51080019d1701c8b77044b7e22",
+      "kind": "image",
+      "path": "wallpapers/assets/wall-c4ab1dfc-2528-458c-bd53-a04964d3fd00.jpg",
+      "sha256": "9cc6a6377eef47c94f48a97f96b67ca262de732b5e09ebb639dd46ced86c16f6",
+      "size": 169079
     }
   ]
 }
