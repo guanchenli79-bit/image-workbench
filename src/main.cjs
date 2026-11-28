@@ -6,6 +6,7 @@ const crypto = require('node:crypto');
 const { pathToFileURL } = require('node:url');
 const { imageModels, videoModels, presets } = require('./catalog.cjs');
 const {providerFor,grsaiSpec,syncImageModels} = require('./providers.cjs');
+const {CHANNELS,channelFor,requestBase} = require('./channels.cjs');
 const { resolveSize } = require('./sizing.cjs');
 const { normalizeBase, generateImage, generateVideo, queryTask } = require('./api.cjs');
 const { networkFetch } = require('./network.cjs');
@@ -14,7 +15,7 @@ const { releaseNotesText, updateErrorMessage } = require('./update-notes.cjs');
 const { prepareReference, prepareGeneratedReference, generatedReferenceFile, MAX_REFERENCES } = require('./references.cjs');
 const { currentMachineCode, normalizeLicenseKey, hashCode, findLicense, fetchRegistry } = require('./license.cjs');
 const {fetchManifest,downloadWallpaper,sha256}=require('./wallpapers.cjs');
-const {loadIdentity,submitApplication,getApplication}=require('./approval.cjs');
+const {loadIdentity,submitApplication,getApplication,getAnnouncement,openAnnouncementSocket}=require('./approval.cjs');
 const {migrateMultimodalHistory}=require('./maintenance-migration.cjs');
 
 // Both the original workbench and Xiongba use this directory. Keep it stable
@@ -32,7 +33,7 @@ let mainWindow;
 let records = [];
 let settings = {baseUrl:'https://www.geeknow.top',apiKey:''};
 let profiles = {};
-let lastDisplayedModels = imageModels;
+let selectedModels = {};
 let settingsPersistQueue = Promise.resolve();
 const refs = new Map();
 const TTL = 2 * 60 * 60 * 1000;
@@ -53,13 +54,23 @@ let deviceIdentity = null;
 let approvalStatus = {status:'none'};
 let approvalReason = '';
 let approvalCheckedAt = 0;
+let approvalRequest = null;
+let applicationSubmitting = false;
+let approvalTimer;
+let workspaceUnlocked = false;
+let announcement = null;
+let readAnnouncements = new Set();
+let announcementSocket = null;
+let announcementSocketRetryAt = 0;
+let announcementRefresh = null;
+let announcementRefreshPending = false;
 let currentWallpaper={id:'original',kind:'bundled'};
 let wallpaperSyncing=false;
 
 function files() {
   const dir = app.getPath('userData');
   return {dir, settings:path.join(dir,'settings.json'),history:path.join(dir,'history.json'),license:path.join(dir,'license.json'),media:path.join(dir,'temporary-media'),
-    wallpaper:path.join(dir,'wallpaper-state.json'),wallpaperCache:path.join(dir,'wallpaper-cache')};
+    announcementReads:path.join(dir,'announcement-reads.json'),wallpaper:path.join(dir,'wallpaper-state.json'),wallpaperCache:path.join(dir,'wallpaper-cache')};
 }
 function wallpaperDescriptor(){
   return currentWallpaper.kind==='bundled'?{id:'original',kind:'video',url:'../../assets/activation-wallpaper.mp4'}:
@@ -115,10 +126,10 @@ function fallbackGrsaiModels() {
 function activeProfile() { return profiles[settings.baseUrl]; }
 function activeImageModels() {
   const profile=activeProfile();
-  if(profile?.models?.length)return profile.models;
-  if(providerFor(settings.baseUrl)==='grsai')return fallbackGrsaiModels();
+  if(profile?.syncedAt || profile?.models?.length)return profile.models;
+  if(providerFor(settings.baseUrl)==='grsai')return profile?.apiKey?fallbackGrsaiModels():[];
   if(providerFor(settings.baseUrl)==='geeknow')return imageModels;
-  return lastDisplayedModels;
+  return [];
 }
 function activeVideoModels() {
   if(providerFor(settings.baseUrl)==='geeknow')return videoModels;
@@ -130,17 +141,19 @@ function modelSnapshot(extra={}) {
 }
 async function syncActiveModels() {
   const baseUrl=settings.baseUrl;
+  const profile=profiles[baseUrl];
+  if(!profile?.apiKey)throw new Error('请先录入当前渠道的 API Key');
   const result=await syncImageModels(profileSettings(baseUrl));
-  const profile=profiles[baseUrl]||{apiKey:'',models:[]};
-  profile.models=result.models;profile.supported=true;profile.syncedAt=Date.now();
-  profile.source=result.source;profile.unsupportedCount=result.unsupportedCount;
-  profiles[baseUrl]=profile;
+  if(profiles[baseUrl]!==profile)return modelSnapshot();
+  profile.models=result.models;
+  profile.supported=result.models.length>0;
+  profile.syncedAt=Date.now();
+  profile.source=result.source;
+  profile.unsupportedCount=result.unsupportedCount;
+  profile.unsupportedModels=result.unsupportedModels||[];
   await persistSettings();
-  if(settings.baseUrl===baseUrl){
-    lastDisplayedModels=result.models;
-    emit('models:changed',modelSnapshot());
-  }
-  return modelSnapshot({source:result.source,unsupportedCount:result.unsupportedCount});
+  if(settings.baseUrl===baseUrl && workspaceUnlocked)emit('models:changed',modelSnapshot());
+  return modelSnapshot();
 }
 async function loadState() {
   const p = files();
@@ -163,12 +176,22 @@ async function loadState() {
           const base=normalizeBase(rawBase);
           const multimodalProfile=Boolean(entry.key||entry.syncInfo);
           profiles[base]={apiKey:decrypted(entry.key||entry.apiKey),models:multimodalProfile?[]:Array.isArray(entry.models)?entry.models.slice(0,500):[],
-            supported:multimodalProfile?true:Boolean(entry.supported),syncedAt:multimodalProfile?0:Number(entry.syncedAt)||0,source:multimodalProfile?'待重新同步':String(entry.source||''),unsupportedCount:Number(entry.unsupportedCount)||0};
+            supported:multimodalProfile?true:Boolean(entry.supported),syncedAt:multimodalProfile?0:Number(entry.syncedAt)||0,source:multimodalProfile?'待重新同步':String(entry.source||''),unsupportedCount:Number(entry.unsupportedCount)||0,
+            unsupportedModels:!multimodalProfile&&Array.isArray(entry.unsupportedModels)?entry.unsupportedModels.slice(0,500):[]};
         }catch{}
       }
     } else profiles[activeBase]={apiKey:decrypted(stored.apiKey),models:[],supported:providerFor(activeBase)!=='openai-compatible'};
     if(!profiles[activeBase])profiles[activeBase]={apiKey:'',models:[],supported:providerFor(activeBase)!=='openai-compatible'};
-    settings=profileSettings(activeBase);
+    const grsai=CHANNELS.find(channel=>channel.provider==='grsai');
+    const oldGrsBase='https://grsai.dakka.com.cn';
+    const migrateGrsAlias=activeBase===oldGrsBase&&profiles[oldGrsBase]?.apiKey&&!profiles[grsai.baseUrl]?.apiKey;
+    if(migrateGrsAlias)profiles[grsai.baseUrl]=profiles[oldGrsBase];
+    selectedModels=stored.selectedModels&&typeof stored.selectedModels==='object'?stored.selectedModels:{};
+    settings=profileSettings(migrateGrsAlias?grsai.baseUrl:activeBase);
+  } catch {}
+  try {
+    const ids=JSON.parse(await fsp.readFile(p.announcementReads,'utf8'));
+    if(Array.isArray(ids))readAnnouncements=new Set(ids.filter(id=>typeof id==='string'&&/^[0-9a-f-]{36}$/.test(id)));
   } catch {}
   try {
     const stored=JSON.parse(await fsp.readFile(p.history,'utf8'));
@@ -182,30 +205,115 @@ async function loadState() {
   } catch { records=[]; }
   if(recoverSubmittedMidjourney(records))await persistRecords();
   await pruneExpired();
-  await refreshApproval();
 }
-async function refreshApproval(){
-  if(!deviceIdentity||!licenseMachineCode)return;
+
+function publishLicenseStatus(){
+  const status=licenseStatus();
+  if(!status.active)workspaceUnlocked=false;
+  emit('license:status',{...status,loggedIn:workspaceUnlocked});
+  return status;
+}
+function refreshApproval(){
+  if(approvalRequest)return approvalRequest;
+  if(!deviceIdentity||!licenseMachineCode||applicationSubmitting)return;
+  approvalRequest=(async()=>{
+    try{
+      approvalStatus=await getApplication(deviceIdentity,licenseMachineCode);
+      approvalCheckedAt=Date.now();
+      approvalReason='';
+    }catch(error){approvalReason='审批服务暂不可用：'+error.message;}
+    finally{approvalRequest=null;}
+    publishLicenseStatus();
+    maintainAnnouncementConnection();
+  })();
+  return approvalRequest;
+}
+function scheduleApprovalRefresh(){
+  const delay=['none','pending'].includes(approvalStatus.status)?5000:30000;
+  clearTimeout(approvalTimer);
+  approvalTimer=setTimeout(async()=>{await refreshApproval();scheduleApprovalRefresh();},delay);
+}
+function unreadAnnouncement(){
+  return announcement&&!readAnnouncements.has(announcement.id)?announcement:null;
+}
+function setAnnouncement(value){
+  const oldId=unreadAnnouncement()?.id;
+  announcement=value||null;
+  const unread=unreadAnnouncement();
+  if(oldId!==unread?.id)emit('announcement:changed',unread);
+}
+function refreshAnnouncement(){
+  if(announcementRefresh){announcementRefreshPending=true;return announcementRefresh;}
+  const status=licenseStatus();
+  if(status.status!=='approved'||!status.active)return;
+  announcementRefresh=(async()=>{
+    do {
+      announcementRefreshPending=false;
+      try {
+        const result=await getAnnouncement(deviceIdentity,licenseMachineCode);
+        const status=licenseStatus();
+        if(status.active&&status.status==='approved')setAnnouncement(result.announcement);
+      }catch(error){
+        if(error.status===403)setAnnouncement(null);
+      }
+    }while(announcementRefreshPending&&licenseStatus().active);
+  })().finally(()=>{announcementRefresh=null;});
+  return announcementRefresh;
+}
+function maintainAnnouncementConnection(){
+  const status=licenseStatus();
+  if(!status.active||status.status!=='approved'){
+    const socket=announcementSocket;
+    announcementSocket=null;
+    socket?.close();
+    setAnnouncement(null);
+    return;
+  }
+  if(announcementSocket?.readyState===1)return;
+  void refreshAnnouncement();
+  if(announcementSocket||Date.now()<announcementSocketRetryAt)return;
   try{
-    approvalStatus=await getApplication(deviceIdentity,licenseMachineCode);
-    approvalCheckedAt=Date.now();
-    approvalReason='';
-    emit('license:status',licenseStatus());
-  }catch(error){approvalReason=`审批服务暂不可用：${error.message}`;emit('license:status',licenseStatus());}
+    const socket=openAnnouncementSocket(deviceIdentity,licenseMachineCode);
+    announcementSocket=socket;
+    const timeout=setTimeout(()=>{if(socket.readyState===0)socket.close();},12000);
+    socket.addEventListener('open',()=>clearTimeout(timeout),{once:true});
+    socket.addEventListener('message',event=>{if(event.data==='changed')void refreshAnnouncement();});
+    const reconnect=()=>{
+      clearTimeout(timeout);
+      if(announcementSocket!==socket)return;
+      announcementSocket=null;
+      announcementSocketRetryAt=Date.now()+30000;
+    };
+    socket.addEventListener('close',reconnect,{once:true});
+    socket.addEventListener('error',reconnect,{once:true});
+  }catch{announcementSocketRetryAt=Date.now()+30000;}
+}
+async function markAnnouncementRead(id){
+  if(typeof id!=='string'||!/^[0-9a-f-]{36}$/.test(id))throw new Error('公告编号无效');
+  if(readAnnouncements.has(id)||announcement?.id!==id)return unreadAnnouncement();
+  const next=new Set(readAnnouncements).add(id);
+  await writeJson(files().announcementReads,[...next]);
+  readAnnouncements=next;
+  const unread=unreadAnnouncement();
+  emit('announcement:changed',unread);
+  return unread;
 }
 function licenseStatus() {
   const now=Date.now();
   if(approvalStatus.status!=='none'){
     const active=approvalStatus.status==='approved'&&Date.parse(approvalStatus.expiresAt)>now&&now-approvalCheckedAt<5*60*1000;
-    const labels={pending:'申请已提交，等待管理员审批',rejected:`申请已驳回${approvalStatus.reason?`：${approvalStatus.reason}`:''}，可重新提交`,unbound:'设备已解绑，可重新提交申请',expired:'绑定已到期，请重新提交申请'};
+    const labels={approved:'审批状态尚未确认，请稍后重试',pending:'申请已提交，等待管理员审批',rejected:`申请已驳回${approvalStatus.reason?`：${approvalStatus.reason}`:''}，可重新提交`,unbound:'设备已解绑，可重新提交申请',expired:'绑定已到期，请重新提交申请'};
     return {active,machineCode:licenseMachineCode||'',expiresAt:active?approvalStatus.expiresAt:null,status:approvalStatus.status,name:approvalStatus.name||'',message:active?'已通过审批':approvalReason||labels[approvalStatus.status]||'请提交使用申请'};
   }
   const valid=!!licenseMachineCode && !!licenseRecord && Date.parse(licenseRecord.expiresAt)>now && now+5*60*1000>=Number(licenseRecord.lastSeenAt||0);
   return {active:valid,machineCode:licenseMachineCode||'',expiresAt:valid?licenseRecord.expiresAt:null,
-    status:valid?'legacy':'none',message:licenseMachineError || approvalReason || licenseReason || (licenseRecord&&!valid?'旧版授权已到期，请提交使用申请':'填写用户名和密码，向管理员提交使用申请')};
+    status:valid?'legacy':(!approvalCheckedAt&&!approvalReason&&!licenseMachineError?'checking':'none'),message:licenseMachineError || approvalReason || licenseReason ||
+    (valid?'已绑定此设备':!approvalCheckedAt?'正在核验设备…':licenseRecord?'旧版授权已到期，请提交使用申请':'填写用户名和密码，向管理员提交使用申请')};
 }
 function requireLicense() {
-  if(!licenseStatus().active){emit('license:status',licenseStatus());throw new Error(licenseStatus().message);}
+  const status=licenseStatus();
+  if(!status.active){publishLicenseStatus();throw new Error(status.message);}
+  if(!workspaceUnlocked)throw new Error('请先点击登录');
 }
 async function persistLicense() {
   if(!licenseRecord){await fsp.rm(files().license,{force:true});return;}
@@ -221,7 +329,7 @@ async function activateLicense(input) {
   licenseRecord={machineHash:hashCode('machine',licenseMachineCode),keyHash:hashCode('license',key),expiresAt:match.expiresAt,lastSeenAt:Date.now()};
   licenseReason='';
   await persistLicense();
-  emit('license:status',licenseStatus());
+  publishLicenseStatus();
   return licenseStatus();
 }
 async function refreshLicense() {
@@ -233,24 +341,31 @@ async function refreshLicense() {
     if(!match){licenseRecord=null;licenseReason='授权已被管理员解绑或已到期，请重新获取卡密';}
     else {licenseRecord.expiresAt=match.expiresAt;licenseRecord.lastSeenAt=Date.now();licenseReason='';}
     await persistLicense();
-    emit('license:status',licenseStatus());
+    publishLicenseStatus();
   } catch {} finally { licenseRefreshInFlight=false; }
 }
 function persistSettings() {
   settingsPersistQueue=settingsPersistQueue.catch(()=>{}).then(async()=>{
-    const stored={baseUrl:settings.baseUrl,profiles:{}};
+    const stored={baseUrl:settings.baseUrl,profiles:{},selectedModels};
     for(const [base,profile] of Object.entries(profiles))
       stored.profiles[base]={apiKey:encrypted(profile.apiKey),models:profile.models||[],supported:Boolean(profile.supported),
-        syncedAt:profile.syncedAt||0,source:profile.source||'',unsupportedCount:profile.unsupportedCount||0};
+        syncedAt:profile.syncedAt||0,source:profile.source||'',unsupportedCount:profile.unsupportedCount||0,unsupportedModels:profile.unsupportedModels||[]};
     await writeJson(files().settings,stored);
   });
   return settingsPersistQueue;
 }
 function publicSettings() {
   const profile=activeProfile();
-  return {baseUrl:settings.baseUrl,hasKey:!!settings.apiKey,keyTail:settings.apiKey?settings.apiKey.slice(-4):'',
-    provider:providerFor(settings.baseUrl),syncedAt:profile?.syncedAt||0,source:profile?.source||'',
-    supported:profile?.supported!==false,unsupportedCount:profile?.unsupportedCount||0};
+  const channel=channelFor(settings.baseUrl);
+  return {baseUrl:settings.baseUrl,channelId:channel?.id||'custom',channelLabel:channel?.label||'自定义接口',
+    customBaseUrl:!channel?settings.baseUrl:Object.keys(profiles).find(base=>!channelFor(base))||'https://www.geeknow.top',
+    hasKey:!!settings.apiKey,keyTail:settings.apiKey?settings.apiKey.slice(-4):'',
+    syncedAt:profile?.syncedAt||0,supported:profile?.supported!==false,unsupportedCount:profile?.unsupportedCount||0,unsupportedModels:profile?.unsupportedModels||[],
+    channels:CHANNELS.map(({id,label})=>({id,label})),selectedModels:selectedModels[settings.baseUrl]||{}};
+}
+function endpointKeyInfo(baseUrl){
+  const key=profiles[baseUrl]?.apiKey||'';
+  return {hasKey:!!key,keyTail:key.slice(-4)};
 }
 function storeReferences(inputs,{expiresAt=null}={}) {
   if (!Array.isArray(inputs) || !inputs.length) return [];
@@ -359,7 +474,7 @@ async function completeRecord(record,items,settingsSnapshot) {
 }
 
 async function pollTasks() {
-  if(polling || !licenseStatus().active)return;
+  if(polling || !workspaceUnlocked || !licenseStatus().active)return;
   polling=true;
   try {
     const pending=records.filter(r=>r.status==='pending' && r.taskId);
@@ -384,7 +499,7 @@ function createWindow() {
   mainWindow.loadFile(path.join(__dirname,'renderer','index.html'));
   mainWindow.webContents.setWindowOpenHandler(({url})=>{ if(url.startsWith('https://docs.geeknow.ai/'))shell.openExternal(url); return {action:'deny'}; });
   mainWindow.webContents.on('context-menu',(_,params)=>{
-    if(params.mediaType!=='image')return;
+    if(!workspaceUnlocked||params.mediaType!=='image')return;
     let url;try{url=new URL(params.srcURL);}catch{return;}
     if(url.protocol!=='workbench-media:' || url.hostname!=='item')return;
     const [id,indexRaw]=url.pathname.split('/').filter(Boolean);
@@ -399,37 +514,72 @@ function createWindow() {
 }
 
 function registerIpc() {
-  ipcMain.handle('app:init',async()=>licenseStatus().active?
-    {license:licenseStatus(),wallpaper:wallpaperDescriptor(),...modelSnapshot(),presets,history:listHistory(),version:app.getVersion(),isPackaged:app.isPackaged}:
-    {license:licenseStatus(),wallpaper:wallpaperDescriptor(),version:app.getVersion(),isPackaged:app.isPackaged});
+  const loginPage=()=>({license:{...licenseStatus(),loggedIn:workspaceUnlocked},wallpaper:wallpaperDescriptor(),
+    announcement:unreadAnnouncement(),version:app.getVersion(),isPackaged:app.isPackaged});
+  const workspace=()=>({...loginPage(),...modelSnapshot(),presets,history:listHistory()});
+  ipcMain.handle('app:init',()=>workspaceUnlocked&&licenseStatus().active?workspace():loginPage());
+  ipcMain.handle('approval:login',async()=>{
+    await refreshApproval();
+    const status=licenseStatus();
+    if(!status.active||(status.status==='approved'&&approvalReason))throw new Error(approvalReason||status.message);
+    workspaceUnlocked=true;
+    if(settings.apiKey)void syncActiveModels().catch(error=>emit('models:sync-error',error.message));
+    void pollTasks();
+    return workspace();
+  });
+  ipcMain.handle('announcement:read',(_,id)=>markAnnouncementRead(id));
   ipcMain.handle('approval:submit',async(_,input)=>{
     if(!deviceIdentity||!licenseMachineCode)throw new Error(approvalReason||licenseMachineError||'设备身份不可用');
-    approvalStatus=await submitApplication(deviceIdentity,licenseMachineCode,String(input?.username||'').trim(),String(input?.password||''));
-    approvalCheckedAt=Date.now();
-    emit('license:status',licenseStatus());
-    return licenseStatus();
+    if(applicationSubmitting)throw new Error('申请正在提交，请稍候');
+    applicationSubmitting=true;
+    try {
+      await approvalRequest;
+      approvalStatus=await submitApplication(deviceIdentity,licenseMachineCode,String(input?.username||'').trim(),String(input?.password||''));
+      approvalCheckedAt=Date.now();
+      approvalReason='';
+      scheduleApprovalRefresh();
+      maintainAnnouncementConnection();
+      return publishLicenseStatus();
+    } finally { applicationSubmitting=false; }
   });
   ipcMain.handle('approval:refresh',async()=>{await refreshApproval();return licenseStatus();});
   ipcMain.handle('license:copy-machine',()=>{if(!licenseMachineCode)throw new Error(licenseMachineError||'机器码不可用');clipboard.writeText(licenseMachineCode);return true;});
+  ipcMain.handle('settings:key-info',(_,input)=>{requireLicense();return endpointKeyInfo(requestBase(input,normalizeBase));});
+  ipcMain.handle('settings:model',async(_,input)=>{
+    requireLicense();
+    if(input.baseUrl!==settings.baseUrl)return;
+    const type=input.type==='video'?'video':'image';
+    const models=type==='video'?activeVideoModels():activeImageModels();
+    if(!models.some(model=>model.id===input.modelId&&model.adapter!=='unsupported'))return;
+    selectedModels[settings.baseUrl]={...selectedModels[settings.baseUrl],[type]:input.modelId};
+    await persistSettings();
+  });
   ipcMain.handle('settings:save',async(_,input)=>{
     requireLicense();
-    const baseUrl=normalizeBase(input.baseUrl);
+    const baseUrl=requestBase(input,normalizeBase);
     const apiKey=String(input.apiKey||'').trim();
     if(apiKey && !safeStorage.isEncryptionAvailable())throw new Error('系统安全存储不可用，无法保存 API Key');
-    const previousModels=activeImageModels();
-    const profile=profiles[baseUrl]||{apiKey:'',models:[],supported:providerFor(baseUrl)!=='openai-compatible'};
-    if(!profile.models.length && providerFor(baseUrl)==='openai-compatible'){profile.models=previousModels;profile.supported=false;}
-    if(apiKey)profile.apiKey=apiKey;
-    if(input.clearKey)profile.apiKey='';
+    const previous=profiles[baseUrl];
+    const profile={...previous,apiKey:input.clearKey?'':apiKey||previous?.apiKey||'',models:previous?.models||[]};
+    if(apiKey && apiKey!==previous?.apiKey && providerFor(baseUrl)!=='geeknow'){
+      Object.assign(profile,{models:[],syncedAt:0,source:'',supported:false,unsupportedCount:0,unsupportedModels:[]});
+    }
+    if(input.clearKey)Object.assign(profile,{models:[],syncedAt:0,source:'',supported:false,unsupportedCount:0,unsupportedModels:[]});
+    if(input.channelId&&input.channelId!=='custom'&&!profile.apiKey&&!input.clearKey)throw new Error('请先输入这个渠道的 API Key');
     profiles[baseUrl]=profile;
+    if(input.clearKey&&settings.baseUrl!==baseUrl){
+      await persistSettings();
+      return modelSnapshot();
+    }
     settings={baseUrl,apiKey:profile.apiKey};
     await persistSettings();
+    if(!profile.apiKey || settings.baseUrl!==baseUrl)return modelSnapshot();
     try{return await syncActiveModels();}
     catch(error){return modelSnapshot({syncError:error.message});}
   });
   ipcMain.handle('settings:verify',async(_,input)=>{
     requireLicense();
-    const baseUrl=normalizeBase(input.baseUrl);
+    const baseUrl=requestBase(input,normalizeBase);
     const candidate={baseUrl,apiKey:String(input.apiKey||'').trim()||profiles[baseUrl]?.apiKey||''};
     if(!candidate.apiKey)throw new Error('请先输入 API Key');
     const result=await syncImageModels(candidate);
@@ -464,7 +614,8 @@ function registerIpc() {
     const type=input.type==='video'?'video':'image';
     if(activeProfile()?.supported===false)throw new Error('此端口的模型参数尚未适配，请先同步模型或更换接口地址');
     const model=(type==='video'?activeVideoModels():activeImageModels()).find(x=>x.id===input.modelId);
-    if(!model||model.adapter==='unsupported')throw new Error('此端口的视频接口尚未适配，请切换到已支持的视频端口');
+    if(!model||model.adapter==='unsupported')throw new Error('当前渠道没有已适配的此类模型');
+    if(!settings.apiKey)throw new Error('请先设置当前渠道的 API Key');
     const prompt=String(input.prompt||'').trim();if(!prompt)throw new Error('请填写提示词');
     if(prompt.length>8000)throw new Error('提示词过长');
     const references=(input.referenceIds||[]).map(id=>refs.get(id)).filter(Boolean);
@@ -517,7 +668,7 @@ function registerIpc() {
 app.whenReady().then(async()=>{
   await loadState();
   protocol.handle('workbench-media',async request=>{
-    if(!licenseStatus().active)return new Response('Not licensed',{status:403});
+    if(!workspaceUnlocked||!licenseStatus().active)return new Response('Not licensed',{status:403});
     const url=new URL(request.url);
     const [id,indexRaw]=url.pathname.split('/').filter(Boolean);
     if(url.hostname!=='item'||!/^[0-9a-f-]{36}$/.test(id||'')||!/^[0-9]+$/.test(indexRaw||''))return new Response('Not found',{status:404});
@@ -535,13 +686,12 @@ app.whenReady().then(async()=>{
   });
   registerIpc();createWindow();
   setTimeout(syncWallpaper,1200);setInterval(syncWallpaper,75*1000);
-  setTimeout(()=>{
-    if(licenseStatus().active&&settings.apiKey)
-      syncActiveModels().catch(error=>emit('models:sync-error',error.message));
-  },700);
+  void (async()=>{await refreshApproval();scheduleApprovalRefresh();})();
+  setInterval(maintainAnnouncementConnection,15000);
+  setInterval(refreshAnnouncement,180000);
   setInterval(pruneExpired,60*1000);setInterval(pollTasks,15*1000);setTimeout(pollTasks,2000);
   setTimeout(refreshLicense,3000);setInterval(refreshLicense,30*60*1000);
-  setInterval(refreshApproval,30*1000);
+
   if(app.isPackaged){
     autoUpdater.autoDownload=false;autoUpdater.autoInstallOnAppQuit=false;
     autoUpdater.fullChangelog=true;

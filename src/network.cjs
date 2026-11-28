@@ -1,4 +1,4 @@
-const { Agent, EnvHttpProxyAgent, fetch: undiciFetch } = require('undici');
+const { Agent, EnvHttpProxyAgent, WebSocket, fetch: undiciFetch } = require('undici');
 
 // Electron's network stack follows Windows proxy, PAC and VPN settings,
 // including SOCKS proxies. Undici is retained for non-Electron tests/tools.
@@ -37,4 +37,8 @@ async function networkFetch(url, options = {}) {
   }
 }
 
-module.exports = { networkFetch, desktopFetch, proxyConnectionFailed };
+function networkWebSocket(url,headers) {
+  return new WebSocket(url,{headers,dispatcher:environmentDispatcher});
+}
+
+module.exports = { networkFetch, networkWebSocket, desktopFetch, proxyConnectionFailed };

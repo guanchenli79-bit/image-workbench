@@ -5,6 +5,14 @@ workers_dev = true
 preview_urls = false
 account_id = "5989a061d1dcd659f8ef60199027f9ba"
 
+[[durable_objects.bindings]]
+name = "ANNOUNCEMENTS"
+class_name = "AnnouncementHub"
+
+[[migrations]]
+tag = "announcements-v1"
+new_sqlite_classes = ["AnnouncementHub"]
+
 [[d1_databases]]
 binding = "DB"
 database_name = "image-workbench-approvals"

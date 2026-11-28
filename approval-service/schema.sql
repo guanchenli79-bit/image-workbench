@@ -26,3 +26,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS applications_approved_phone_idx ON application
 CREATE INDEX IF NOT EXISTS applications_username_idx ON applications(username_hash, created_at DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS applications_approved_username_idx ON applications(username_hash) WHERE status='approved' AND username_hash IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS applications_approved_machine_idx ON applications(machine_hash) WHERE status='approved';
+
+CREATE TABLE IF NOT EXISTS active_announcement (
+  slot INTEGER PRIMARY KEY CHECK (slot = 1),
+  id TEXT NOT NULL UNIQUE,
+  title TEXT NOT NULL,
+  content TEXT NOT NULL,
+  published_at TEXT NOT NULL
+);

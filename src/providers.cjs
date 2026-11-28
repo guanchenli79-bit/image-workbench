@@ -1,5 +1,7 @@
 const {imageModels:geeknowCatalog} = require('./catalog.cjs');
 const {networkFetch} = require('./network.cjs');
+const {ARK_HOST} = require('./channels.cjs');
+const {seedreamSpec} = require('./seedream.cjs');
 
 const GRS_RATIOS=['1:1','16:9','9:16','4:3','3:4','3:2','2:3','5:4','4:5','21:9'];
 const GRS_GPT_RATIOS=[...GRS_RATIOS,'9:21','1:2','2:1'];
@@ -7,6 +9,7 @@ const GRS_GPT_RATIOS=[...GRS_RATIOS,'9:21','1:2','2:1'];
 function providerFor(baseUrl) {
   const host=new URL(baseUrl).hostname.toLowerCase();
   if(host==='grsaiapi.com'||host==='grsai.dakka.com.cn')return 'grsai';
+  if(host===ARK_HOST)return 'ark';
   if(host==='www.geeknow.top'||host==='geeknow.top')return 'geeknow';
   return 'openai-compatible';
 }
@@ -15,7 +18,7 @@ function parseGrsaiPage(html) {
   const chunks=[...String(html).matchAll(/self\.__next_f\.push\(\[1,("(?:\\.|[^"\\])*")\]\)<\/script>/g)]
     .map(match=>{try{return JSON.parse(match[1]);}catch{return '';}});
   const chunk=chunks.find(value=>value.includes('"models":['));
-  if(!chunk)throw new Error('Grsai 模型页未返回可识别的模型数据');
+  if(!chunk)throw new Error('渠道模型页未返回可识别的数据');
   const marker='"models":[';
   const start=chunk.indexOf(marker)+marker.length-1;
   let depth=0,inString=false,escaped=false,end=-1;
@@ -26,9 +29,9 @@ function parseGrsaiPage(html) {
     else if(c==='[')depth++;
     else if(c===']'&&!--depth){end=i+1;break;}
   }
-  if(end<0)throw new Error('Grsai 模型数据不完整');
+  if(end<0)throw new Error('渠道模型数据不完整');
   const models=JSON.parse(chunk.slice(start,end));
-  if(!Array.isArray(models)||models.length>1000)throw new Error('Grsai 模型数据格式不正确');
+  if(!Array.isArray(models)||models.length>1000)throw new Error('渠道模型数据格式不正确');
   return models;
 }
 
@@ -40,13 +43,13 @@ function grsaiSpec(entry) {
   if(/^gpt-image-2(?:\.5)?(?:-(?:vip|flare|sunburst))?$/.test(id)){
     const extended=/-vip|-flare|-sunburst/.test(id);
     const resolutions=extended?['1K','2K','4K']:['1K'];
-    return {id,label:id,family:'Grsai · GPT Image',adapter:'grsai-image',grsaiFamily:'gpt',refs:true,
+    return {id,label:id,family:'GPT Image',adapter:'grsai-image',grsaiFamily:'gpt',refs:true,
       ratios:GRS_GPT_RATIOS,resolutions,quality:id.endsWith('-vip')?'medium':id.endsWith('-flare')||id.endsWith('-sunburst')?'medium':'auto',description};
   }
   if(/^nano-banana-[\w.-]+$/.test(id)){
     const resolutions=['1K','2K','4K'].filter(value=>description.toUpperCase().includes(value));
     if(!resolutions.length)resolutions.push(/4k/i.test(id)?'4K':/2k/i.test(id)?'2K':'1K');
-    return {id,label:id,family:'Grsai · Nano Banana',adapter:'grsai-image',grsaiFamily:'nano',refs:true,
+    return {id,label:id,family:'Nano Banana',adapter:'grsai-image',grsaiFamily:'nano',refs:true,
       ratios:GRS_RATIOS,resolutions,description};
   }
   return null;
@@ -63,6 +66,20 @@ function openAiSpec(entry) {
 function imageListFromModels(payload,provider) {
   const rows=Array.isArray(payload?.data)?payload.data:Array.isArray(payload?.models)?payload.models:null;
   if(!rows)throw new Error('接口未返回标准模型列表');
+  if (provider === 'ark') {
+    const models = new Map();
+    const unsupportedModels = new Set();
+    for (const row of rows) {
+      const isImage = row?.domain === 'ImageGeneration' ||
+        row?.task_type?.some?.(type => type === 'TextToImage' || type === 'ImageToImage') ||
+        (!row?.domain && /^doubao-seedream-/.test(row?.id || ''));
+      if (!isImage || (row.status && !['Published','Retiring'].includes(row.status))) continue;
+      const model = seedreamSpec(row);
+      if (model) models.set(model.id, model);
+      else if(typeof row.id==='string'&&/^[\w.-]{2,90}$/.test(row.id))unsupportedModels.add(row.id);
+    }
+    return {models:[...models.values()],unsupportedCount:unsupportedModels.size,unsupportedModels:[...unsupportedModels]};
+  }
   const found=[],seen=new Set();let unsupportedCount=0;
   for(const row of rows){
     const id=String(row?.id||row?.name||'');
@@ -79,23 +96,25 @@ async function syncImageModels(settings,fetcher=networkFetch) {
   const provider=providerFor(settings.baseUrl);
   if(provider==='grsai'){
     const response=await fetcher('https://grsai.ai/dashboard/models',{signal:AbortSignal.timeout(20000)});
-    if(!response.ok)throw new Error('Grsai 模型页暂不可用（HTTP '+response.status+'）');
+    if(!response.ok)throw new Error('渠道模型页暂不可用（HTTP '+response.status+'）');
     const rows=parseGrsaiPage(await response.text()).filter(row=>row?.type==='image'&&!row.closeModel);
     const models=rows.map(grsaiSpec).filter(Boolean);
-    if(!models.length)throw new Error('Grsai 没有返回可调用的生图模型');
-    return {provider,models,unsupportedCount:rows.length-models.length,source:'Grsai 官方模型页'};
+    const unsupportedModels=[...new Set(rows.filter(row=>!grsaiSpec(row)).map(row=>row.name)
+      .filter(id=>typeof id==='string'&&/^[\w.-]{2,90}$/.test(id)))];
+    return {provider,models,unsupportedCount:unsupportedModels.length,unsupportedModels,source:'Grsai 官方模型页'};
   }
   if(!settings.apiKey)throw new Error('请先填写当前端口的 API Key，再同步模型');
-  const response=await fetcher(settings.baseUrl+'/v1/models',{
+  const route=provider==='ark'?'/models':'/v1/models';
+  const response=await fetcher(settings.baseUrl+route,{
     headers:{Authorization:'Bearer '+settings.apiKey},signal:AbortSignal.timeout(20000)
   });
   if(!response.ok){
     if(response.status===401||response.status===403)throw new Error('当前端口拒绝了 API Key，请检查 Key 是否属于这个站点');
-    if(response.status===404)throw new Error('该端口没有标准 /v1/models 接口，需要单独适配');
+    if(response.status===404)throw new Error('当前渠道的模型列表接口不可用');
     throw new Error('读取模型列表失败（HTTP '+response.status+'）');
   }
   const parsed=await response.json();
-  return {provider,...imageListFromModels(parsed,provider),source:'/v1/models'};
+  return {provider,...imageListFromModels(parsed,provider),source:provider==='ark'?'官方模型列表':'/v1/models'};
 }
 
 module.exports={providerFor,parseGrsaiPage,grsaiSpec,openAiSpec,imageListFromModels,syncImageModels};

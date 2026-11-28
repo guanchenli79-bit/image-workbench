@@ -1,6 +1,7 @@
 const path = require('node:path');
 const { Blob } = require('node:buffer');
 const { networkFetch } = require('./network.cjs');
+const { ARK_HOST } = require('./channels.cjs');
 const URL_REFERENCE_IMAGE_MODELS = new Set(['gpt-image-2','gpt-image-2-pro','gpt-image-2.5-flare','gpt-image-2.5-sunburst','gpt-image-2-vip']);
 
 function normalizeBase(value) {
@@ -9,6 +10,7 @@ function normalizeBase(value) {
   if (!['https:', 'http:'].includes(url.protocol)) throw new Error('接口地址必须以 https:// 开头');
   if (url.protocol === 'http:' && !['localhost','127.0.0.1','::1'].includes(url.hostname)) throw new Error('为保护 API Key，远程接口地址必须使用 HTTPS');
   if (url.username || url.password || url.search || url.hash) throw new Error('接口地址请只填写基础 URL');
+  if (url.hostname === ARK_HOST && ['', '/', '/api/v3'].includes(url.pathname)) url.pathname = '/api/v3';
   if(/\/v1\/?$/.test(url.pathname))url.pathname=url.pathname.replace(/\/v1\/?$/,'')||'/';
   return url.href.replace(/\/+$/, '');
 }
@@ -106,6 +108,18 @@ async function uploadReferences(settings, references, modelName) {
 
 async function generateImage(settings, input, model, sizing, references) {
   const { prompt } = input;
+  if (model.adapter === 'ark-image') {
+    if (!sizing.size) throw new Error('此模型不支持所选尺寸');
+    const body = {model:model.id,prompt,size:sizing.size,response_format:'url',watermark:true};
+    if (model.nativeOutputFormat) body.output_format = 'png';
+    else body.sequential_image_generation = 'disabled';
+    if (references.length === 1) body.image = dataUri(references[0]);
+    if (references.length > 1) body.image = references.map(dataUri);
+    const data = await requestJson(settings,'/images/generations',{method:'POST',body:JSON.stringify(body)});
+    const items = imageItems(data);
+    if (!items.length) throw new Error(data?.data?.[0]?.error?.message || '接口没有返回图片');
+    return {kind:'complete',items};
+  }
   if (model.adapter === 'grsai-image') {
     const body={model:model.id,prompt,images:references.map(dataUri),replyType:'async'};
     if(model.grsaiFamily==='gpt'){

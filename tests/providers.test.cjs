@@ -97,3 +97,55 @@ test('标准 GPT Image 兼容端口使用受支持的尺寸并接收 Base64 图�
     assert.equal(result.items[0].b64,Buffer.from('png').toString('base64'));
   }finally{await new Promise(resolve=>server.close(resolve));}
 });
+
+
+test('渠道二读取方舟生图模型，按所选尺寸和参考图协议提交',async()=>{
+  const {normalizeBase}=require('../src/api.cjs');
+  const {CHANNELS,requestBase}=require('../src/channels.cjs');
+  const {seedreamSpec}=require('../src/seedream.cjs');
+  const modelId='doubao-seedream-5-5-261028';
+  assert.equal(requestBase({channelId:'two',baseUrl:'https://other.example'},normalizeBase),CHANNELS[1].baseUrl);
+  assert.equal(normalizeBase('https://ark.cn-beijing.volces.com/'),CHANNELS[1].baseUrl);
+  const sync=await syncImageModels({baseUrl:CHANNELS[1].baseUrl,apiKey:'test-key'},async(url,options)=>{
+    assert.equal(url,'https://ark.cn-beijing.volces.com/api/v3/models');
+    assert.equal(options.headers.Authorization,'Bearer test-key');
+    return {ok:true,json:async()=>({data:[
+      {id:modelId,domain:'ImageGeneration',status:'Published',modalities:{input_modalities:['text','image']}},
+      {id:'future-image',domain:'ImageGeneration'},
+      {id:'video-example',domain:'VideoGeneration'}
+    ]})};
+  });
+  assert.equal(sync.unsupportedCount,1);
+  assert.deepEqual(sync.models.map(model=>model.id),[modelId]);
+  const model=sync.models[0];
+  assert.deepEqual(model.resolutions,['1K','1.5K','2K']);
+  assert.deepEqual(seedreamSpec({id:'doubao-seedream-4-0-260415'}).resolutions,['1K','2K','4K']);
+  const sizing=resolveSize(model,'16:9','',null,'1.5K');
+  assert.equal(sizing.size,'2048x1152');
+  const requests=[];
+  const server=http.createServer(async(req,res)=>{
+    const chunks=[];for await(const chunk of req)chunks.push(chunk);
+    requests.push({route:req.url,auth:req.headers.authorization,body:JSON.parse(Buffer.concat(chunks))});
+    res.setHeader('Content-Type','application/json');
+    res.end(JSON.stringify({data:[{url:'https://example.com/result.png'}]}));
+  });
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+  try{
+    const settings={baseUrl:'http://127.0.0.1:'+server.address().port+'/api/v3',apiKey:'test-key'};
+    const refs=[{mime:'image/png',buffer:Buffer.from('png')},{mime:'image/jpeg',buffer:Buffer.from('jpeg')}];
+    for(const list of [[],refs.slice(0,1),refs]){
+      const result=await generateImage(settings,{prompt:'test'},model,sizing,list);
+      assert.equal(result.kind,'complete');
+    }
+    for(const {route,auth,body} of requests){
+      assert.equal(route,'/api/v3/images/generations');
+      assert.equal(auth,'Bearer test-key');
+      assert.equal(body.model,modelId);
+      assert.equal(body.size,sizing.size);
+      assert.equal('n' in body,false);
+    }
+    assert.equal('image' in requests[0].body,false);
+    assert.equal(requests[1].body.image,'data:image/png;base64,cG5n');
+    assert.deepEqual(requests[2].body.image,['data:image/png;base64,cG5n','data:image/jpeg;base64,anBlZw==']);
+  }finally{await new Promise(resolve=>server.close(resolve));}
+});

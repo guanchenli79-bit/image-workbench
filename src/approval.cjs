@@ -1,7 +1,7 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const crypto = require('node:crypto');
-const {networkFetch} = require('./network.cjs');
+const {networkFetch,networkWebSocket} = require('./network.cjs');
 
 const SERVICE_URL = 'https://image-workbench-approvals.bbyka.workers.dev';
 const randomSecret = () => crypto.randomBytes(32).toString('base64url');
@@ -9,7 +9,7 @@ const randomSecret = () => crypto.randomBytes(32).toString('base64url');
 async function request(route,{method='GET',body,headers={}}={}) {
   const response=await networkFetch(`${SERVICE_URL}${route}`,{method,headers:{...headers,...(body?{'content-type':'application/json'}:{})},body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(15000)});
   const result=await response.json().catch(()=>({}));
-  if(!response.ok)throw new Error(result.error||`审批服务返回 HTTP ${response.status}`);
+  if(!response.ok)throw Object.assign(new Error(result.error||('审批服务返回 HTTP '+response.status)),{status:response.status});
   return result;
 }
 
@@ -35,4 +35,16 @@ function submitApplication(identity,machineCode,username,password){return reques
 function getApplication(identity,machineCode){return request('/v1/status',{headers:clientHeaders(identity,machineCode)});}
 function adminList(token,offset=0,limit=200){return request(`/v1/admin/applications?offset=${offset}&limit=${limit}`,{headers:{authorization:`Bearer ${token}`}});}
 function adminAction(token,id,action,body={}){return request(`/v1/admin/applications/${id}/${action}`,{method:'POST',body,headers:{authorization:`Bearer ${token}`}});}
-module.exports={SERVICE_URL,loadIdentity,submitApplication,getApplication,adminList,adminAction};
+
+function getAnnouncement(identity,machineCode){
+  return request('/v1/announcement',{headers:clientHeaders(identity,machineCode)});
+}
+function openAnnouncementSocket(identity,machineCode){
+  const url=new URL('/v1/announcement/live',SERVICE_URL);
+  url.protocol='wss:';
+  return networkWebSocket(url,clientHeaders(identity,machineCode));
+}
+function adminAnnouncement(token,method='GET',body){
+  return request('/v1/admin/announcement',{method,body,headers:{authorization:'Bearer '+token}});
+}
+module.exports={SERVICE_URL,loadIdentity,submitApplication,getApplication,adminList,adminAction,getAnnouncement,openAnnouncementSocket,adminAnnouncement};

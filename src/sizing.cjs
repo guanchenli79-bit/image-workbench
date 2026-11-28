@@ -1,4 +1,5 @@
 const { presets } = require('./catalog.cjs');
+const { seedreamSize } = require('./seedream.cjs');
 
 function numberForRatio(ratio) {
   const [w,h] = ratio.split(':').map(Number);
@@ -63,6 +64,8 @@ function resolveSize(model, presetId, prompt, reference, resolutionId) {
   if (model.adapter === 'grsai-image') {
     if(model.grsaiFamily==='gpt'&&model.resolutions.length>1)
       size=grsaiSizes[actualRatio]?.[['1K','2K','4K'].indexOf(resolution)]||null;
+  } else if (model.adapter === 'ark-image') {
+    size = seedreamSize(resolution, actualRatio);
   } else if (model.adapter === 'images') {
     let table;
     if (model.id === 'gpt-image-2-vip') table = resolution === '4K' ? vip4K : resolution === '2K' ? vip2K : vip;

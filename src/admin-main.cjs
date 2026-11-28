@@ -1,7 +1,7 @@
 const {app,BrowserWindow,ipcMain,dialog,clipboard,desktopCapturer,session} = require('electron');
 const path = require('node:path');
 const fsp = require('node:fs/promises');
-const {adminList,adminAction}=require('./approval.cjs');
+const {adminList,adminAction,adminAnnouncement}=require('./approval.cjs');
 const {readManifest,addWallpaper,addRecordedWallpaper,selectWallpaper,removeWallpaper}=require('./admin-wallpapers.cjs');
 const {AdminVault} = require('./admin-vault.cjs');
 const {adminApprovalToken}=require('./admin-approval-token.cjs');
@@ -40,6 +40,16 @@ app.whenReady().then(()=>{
     }
     vault.requireUnlocked();
     return adminAction(adminToken(),input.id,input.action,input.data||{});
+  });
+  ipcMain.handle('admin:announcement',event=>{authorized(event);return adminAnnouncement(adminToken());});
+  ipcMain.handle('admin:announcement-publish',(event,input)=>{
+    authorized(event);
+    return adminAnnouncement(adminToken(),'POST',{title:input?.title,content:input?.content});
+  });
+  ipcMain.handle('admin:announcement-withdraw',(event,id)=>{
+    authorized(event);
+    if(typeof id!=='string'||!/^[0-9a-f-]{36}$/.test(id))throw new Error('公告编号无效');
+    return adminAnnouncement(adminToken(),'DELETE',{id});
   });
   ipcMain.handle('admin:legacy-history',event=>{authorized(event);return vault.snapshot().bindings;});
   ipcMain.handle('admin:wallpapers',async event=>{authorized(event);return (await readManifest()).manifest;});

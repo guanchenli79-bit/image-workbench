@@ -36,10 +36,10 @@ function matchesConstantTime(left,right){
   for(let i=0;i<Math.max(a.length,b.length);i++)difference|=(a.charCodeAt(i)||0)^(b.charCodeAt(i)||0);
   return difference===0;
 }
-async function bodyJson(request){
-  if(Number(request.headers.get('content-length')||0)>4096)throw new Error('请求内容过大');
+async function bodyJson(request,limit=4096){
+  if(Number(request.headers.get('content-length')||0)>limit)throw new Error('请求内容过大');
   const text=await request.text();
-  if(text.length>4096)throw new Error('请求内容过大');
+  if(text.length>limit)throw new Error('请求内容过大');
   return JSON.parse(text);
 }
 async function expireOld(db){
@@ -168,17 +168,90 @@ async function adminAction(request,env,id,action){
   }else return fail('操作不存在',404);
   return json({ok:true});
 }
-export default {async fetch(request,env){
+
+async function currentAnnouncement(db) {
+  return db.prepare('SELECT id, title, content, published_at AS publishedAt FROM active_announcement WHERE slot=1').first();
+}
+function announcementHub(env) {
+  return env.ANNOUNCEMENTS.get(env.ANNOUNCEMENTS.idFromName('current'));
+}
+async function clientAnnouncement(request,env,stream) {
+  const credentials=await deviceCredentials(request);
+  const row=await env.DB.prepare(
+    'SELECT status, expires_at, secret_hash, machine_hash FROM applications WHERE device_id=? ORDER BY created_at DESC LIMIT 1'
+  ).bind(credentials.deviceId).first();
+  if(row?.status!=='approved'||Date.parse(row.expires_at)<=Date.now()||
+     !matchesConstantTime(row.secret_hash,credentials.secretHash)||row.machine_hash!==credentials.machineHash)
+    return fail('当前设备未通过审批',403);
+  if(!stream)return json({announcement:await currentAnnouncement(env.DB)});
+  if(request.headers.get('upgrade')?.toLowerCase()!=='websocket')return fail('需要 WebSocket 连接',426);
+  return announcementHub(env).fetch('https://internal/subscribe',{headers:{upgrade:'websocket'}});
+}
+async function manageAnnouncement(request,env,context) {
+  if(request.method==='GET')return json({announcement:await currentAnnouncement(env.DB)});
+  const input=await bodyJson(request,10000);
+  let announcement=null;
+  if(request.method==='POST'){
+    const title=typeof input?.title==='string'?input.title.trim():'';
+    const content=typeof input?.content==='string'?input.content.trim():'';
+    if(!title||title.length>80||!content||content.length>1500||
+      /[\u0000-\u001f]/.test(title)||/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(content))
+      return fail('请填写公告标题和正文，标题不超过 80 字，正文不超过 1500 字');
+    announcement={id:crypto.randomUUID(),title,content,publishedAt:now()};
+    await env.DB.prepare(
+      'INSERT INTO active_announcement(slot,id,title,content,published_at) VALUES (1,?,?,?,?) '+
+      'ON CONFLICT(slot) DO UPDATE SET id=excluded.id,title=excluded.title,content=excluded.content,published_at=excluded.published_at'
+    ).bind(announcement.id,title,content,announcement.publishedAt).run();
+  }else if(request.method==='DELETE'){
+    const result=await env.DB.prepare('DELETE FROM active_announcement WHERE slot=1 AND id=?').bind(String(input?.id||'')).run();
+    if(!result.meta.changes)return fail('公告已变更，请刷新后重试',409);
+  }else return fail('请求方式不支持',405);
+  context.waitUntil(announcementHub(env).fetch('https://internal/notify',{method:'POST'}).catch(()=>{}));
+  return json({announcement},request.method==='POST'?201:200);
+}
+
+// The socket carries only a change signal. Reading the text always checks the device again.
+export class AnnouncementHub {
+  constructor(state){this.state=state;}
+  fetch(request){
+    const route=new URL(request.url).pathname;
+    if(route==='/subscribe'&&request.headers.get('upgrade')==='websocket'){
+      const [client,server]=Object.values(new WebSocketPair());
+      this.state.acceptWebSocket(server);
+      server.send('changed');
+      return new Response(null,{status:101,webSocket:client});
+    }
+    if(route==='/notify'&&request.method==='POST'){
+      for(const socket of this.state.getWebSockets()){
+        try{socket.send('changed');}catch{}
+      }
+      return new Response(null,{status:204});
+    }
+    return new Response(null,{status:404});
+  }
+  webSocketMessage(){}
+  webSocketClose(socket,code){
+    try{socket.close(code===1000 ? 1000 : 1001);}catch{}
+  }
+  webSocketError(socket){
+    try{socket.close(1011);}catch{}
+  }
+}
+
+export default {async fetch(request,env,context){
   try{
     const url=new URL(request.url);
     if(url.pathname==='/v1/health'&&request.method==='GET')return json({ok:true,version:1});
-    if(url.pathname==='/v1/applications'&&request.method==='POST')return apply(request,env);
-    if(url.pathname==='/v1/status'&&request.method==='GET')return status(request,env);
+    if(url.pathname==='/v1/applications'&&request.method==='POST')return await apply(request,env);
+    if(url.pathname==='/v1/status'&&request.method==='GET')return await status(request,env);
+    if(url.pathname==='/v1/announcement'&&request.method==='GET')return await clientAnnouncement(request,env,false);
+    if(url.pathname==='/v1/announcement/live'&&request.method==='GET')return await clientAnnouncement(request,env,true);
     if(url.pathname.startsWith('/v1/admin/')){
       await requireAdmin(request,env);
-      if(url.pathname==='/v1/admin/applications'&&request.method==='GET')return adminList(request,env);
+      if(url.pathname==='/v1/admin/announcement')return await manageAnnouncement(request,env,context);
+      if(url.pathname==='/v1/admin/applications'&&request.method==='GET')return await adminList(request,env);
       const match=/^\/v1\/admin\/applications\/([0-9a-f-]{36})\/(approve|reject|unbind|rebind|expiry|rename|delete)$/.exec(url.pathname);
-      if(match&&request.method==='POST')return adminAction(request,env,match[1],match[2]);
+      if(match&&request.method==='POST')return await adminAction(request,env,match[1],match[2]);
     }
     return fail('接口不存在',404);
   }catch(error){

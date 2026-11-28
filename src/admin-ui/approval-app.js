@@ -19,6 +19,7 @@ function setPage(id){
   document.querySelectorAll('.admin-tab').forEach(tab=>tab.classList.toggle('active',tab.dataset.page===id));
   if(id==='wallpapersPage')loadWallpapers();
   if(id==='legacyPage')loadLegacy();
+  if(id==='announcementsPage')loadAnnouncement();
 }
 async function act(button,task,success){
   button.disabled=true;try{const result=await task();if(result){message(success);return result;}return null;}
@@ -192,3 +193,57 @@ $('publishRecording').addEventListener('click',async()=>{
 });
 
 window.licenseAdmin.status().then(state=>state.unlocked?showWorkspace():showAuth(state.needsSetup)).catch(error=>{document.getElementById('authPage').hidden=false;document.getElementById('authMessage').textContent=error.message;});
+
+
+let adminAnnouncement=null;
+let announcementDraft=null;
+let announcementOperation=false;
+function showAdminAnnouncement(announcement){
+  adminAnnouncement=announcement;
+  $('currentAnnouncementStatus').textContent=announcement?'发布时间 '+dateText(announcement.publishedAt):'目前没有正在展示的公告';
+  $('currentAnnouncementTitle').textContent=announcement?.title||'';
+  $('currentAnnouncementBody').textContent=announcement?.content||'';
+  $('withdrawAnnouncement').hidden=!announcement;
+}
+async function loadAnnouncement(){
+  if(announcementOperation)return;
+  try{showAdminAnnouncement((await window.licenseAdmin.announcement()).announcement);}
+  catch(error){
+    $('currentAnnouncementStatus').textContent='公告服务暂不可用：'+(error.message||'请稍后重试');
+    $('withdrawAnnouncement').hidden=true;
+  }
+}
+$('reloadAnnouncements').addEventListener('click',loadAnnouncement);
+$('announcementForm').addEventListener('submit',event=>{
+  event.preventDefault();
+  const title=$('adminAnnouncementTitle').value.trim();
+  const content=$('adminAnnouncementBody').value.trim();
+  if(!title||!content){message('请输入公告标题和正文',true);return;}
+  announcementDraft={title,content};
+  $('adminPreviewTitle').textContent=title;
+  $('adminPreviewBody').textContent=content;
+  $('adminAnnouncementPreview').showModal();
+});
+$('cancelAnnouncementPreview').addEventListener('click',()=>{if(!announcementOperation)$('adminAnnouncementPreview').close();});
+$('adminAnnouncementPreview').addEventListener('cancel',event=>{if(announcementOperation)event.preventDefault();});
+$('publishAnnouncement').addEventListener('click',async event=>{
+  if(announcementOperation||!announcementDraft)return;
+  announcementOperation=true;
+  try{
+    const result=await act(event.currentTarget,()=>window.licenseAdmin.publishAnnouncement(announcementDraft),'公告已发布');
+    if(result){
+      showAdminAnnouncement(result.announcement);
+      $('announcementForm').reset();
+    }
+    $('adminAnnouncementPreview').close();
+  }finally{announcementOperation=false;}
+});
+$('withdrawAnnouncement').addEventListener('click',async event=>{
+  if(announcementOperation||!adminAnnouncement)return;
+  if(!window.confirm('撤下当前公告？'))return;
+  announcementOperation=true;
+  try{
+    const result=await act(event.currentTarget,()=>window.licenseAdmin.withdrawAnnouncement(adminAnnouncement.id),'公告已撤下');
+    if(result)showAdminAnnouncement(null);
+  }finally{announcementOperation=false;}
+});

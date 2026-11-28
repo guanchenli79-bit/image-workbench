@@ -10,16 +10,6 @@
   <link rel="stylesheet" href="activation.css">
 </head>
 <body>
-  <section id="maintenanceScreen" class="maintenance-screen" hidden aria-labelledby="maintenanceTitle">
-    <div class="maintenance-card">
-      <img src="../../assets/logo.svg" alt="画境标识">
-      <span class="maintenance-eyebrow">画境工作台</span>
-      <h1 id="maintenanceTitle">客户端已维护完成</h1>
-      <p>工作台已恢复为画境界面。原有设备绑定继续有效，现在可以继续使用。</p>
-      <button id="maintenanceContinue" type="button">继续使用 <span>↗</span></button>
-      <small id="maintenanceMessage" role="status"></small>
-    </div>
-  </section>
   <section id="activationScreen" class="activation-screen" aria-labelledby="activationTitle">
     <video id="activationWallpaperVideo" class="activation-wallpaper" autoplay muted loop playsinline preload="metadata" poster="../../assets/activation-poster.jpg"><source id="activationWallpaperSource" src="../../assets/activation-wallpaper.mp4" type="video/mp4"></video>
     <img id="activationWallpaperImage" class="activation-wallpaper" alt="" hidden>
@@ -28,16 +18,18 @@
     <div class="activation-card">
       <span class="activation-eyebrow"><i></i> DEVICE ACCESS</span>
       <h1 id="activationTitle">开启你的创作空间</h1>
-      <p class="activation-intro">填写用户名和密码提交申请。管理员批准后，这台电脑会自动进入工作台；更新软件不会解除绑定。</p>
+      <p class="activation-intro" id="activationIntro">正在核验此设备。</p>
       <label for="machineCodeValue">当前机器码</label>
       <div class="activation-machine"><code id="machineCodeValue">正在读取…</code><button type="button" id="copyMachineCode" aria-label="复制机器码">复制</button></div>
-      <form id="activationForm">
+      <form id="activationForm" hidden>
         <label for="applicantUsername">用户名</label>
         <input id="applicantUsername" type="text" autocomplete="username" minlength="2" maxlength="32" placeholder="请输入用户名" required>
         <label for="applicantPassword">密码</label>
         <input id="applicantPassword" type="password" autocomplete="new-password" minlength="8" maxlength="128" placeholder="至少 8 位密码" aria-describedby="activationMessage" required>
-        <button class="activation-submit" id="activationSubmit" type="submit">提交使用申请 <span>↗</span></button>
+        <button class="activation-submit" id="activationSubmit" type="submit">提交注册 <span aria-hidden="true">↗</span></button>
       </form>
+      <button class="activation-submit" id="activationLogin" type="button" hidden>登录 <span aria-hidden="true">↗</span></button>
+      <button class="activation-refresh" id="activationRefresh" type="button" hidden>重新检查设备状态</button>
       <p id="activationMessage" class="activation-message" role="status" aria-live="polite">正在准备机器码…</p>
       <div class="activation-foot"><span>一人一机 · 管理员审批</span><span id="activationVersion">画境工作台</span></div>
     </div>
@@ -54,7 +46,7 @@
         <button class="nav-item" data-view="video" type="button">视频生成</button>
         <button class="nav-item" data-view="history" type="button">全部历史</button>
       </nav>
-      <div class="top-actions"><span class="connection" id="connectionPill"><i></i> 尚未连接 API</span><button class="update-button" id="updateButton" type="button" hidden>发现新版本</button><div class="wallpaper-control"><button class="wallpaper-toggle" id="wallpaperToggle" type="button" aria-expanded="false" aria-controls="wallpaperPopover">壁纸 <span id="wallpaperButtonValue">45%</span></button><div id="wallpaperPopover" class="wallpaper-popover" hidden><label for="wallpaperOpacity">壁纸不透明度 <output id="wallpaperOpacityValue" for="wallpaperOpacity">45%</output></label><input id="wallpaperOpacity" type="range" min="0" max="100" step="1" value="45"><p>调低可让页面更清晰；设置会保存在这台电脑。</p></div></div><button class="theme-toggle" id="themeToggle" type="button" aria-pressed="false">☾ 深色模式</button><button class="settings-button" id="settingsButton" type="button">设置 API Key <span>↗</span></button></div>
+      <div class="top-actions"><span class="connection" id="connectionPill"><i></i> 尚未连接 API</span><button class="update-button" id="updateButton" type="button" hidden>发现新版本</button><div class="wallpaper-control"><button class="wallpaper-toggle" id="wallpaperToggle" type="button" aria-expanded="false" aria-controls="wallpaperPopover">壁纸 <span id="wallpaperButtonValue">45%</span></button><div id="wallpaperPopover" class="wallpaper-popover" hidden><label for="wallpaperOpacity">壁纸不透明度 <output id="wallpaperOpacityValue" for="wallpaperOpacity">45%</output></label><input id="wallpaperOpacity" type="range" min="0" max="100" step="1" value="45"><p>调低可让页面更清晰；设置会保存在这台电脑。</p></div></div><button class="theme-toggle" id="themeToggle" type="button" aria-pressed="false">☾ 深色模式</button><button class="settings-button" id="settingsButton" type="button">接口渠道 <span aria-hidden="true">↗</span></button></div>
     </header>
 
     <div class="notice" role="note"><span class="notice-icon">!</span><strong>生成内容会在两小时后自动删除，请及时保存。</strong><span class="notice-detail">本机临时文件从完成时起计时</span></div>
@@ -94,11 +86,30 @@
       </main>
     </div>
   </div>
-  <dialog id="settingsDialog" class="modal"><form method="dialog" id="settingsForm"><div class="modal-head"><div><span class="eyebrow">CONNECTION</span><h2 id="settingsTitle">连接图像 API</h2></div><button class="modal-close" id="closeSettingsDialog" type="button" aria-label="关闭">×</button></div><p class="modal-intro">每个接口地址分别保存自己的 API Key。切换地址后会自动同步可识别的生图模型。</p>
-    <label class="field-label" for="apiKeyInput">API Key</label><div class="password-wrap"><input id="apiKeyInput" type="password" autocomplete="off" placeholder="粘贴你的 API Key"><button type="button" id="toggleKey">显示</button></div><small id="keyStoredNote" class="input-note">还未设置 API Key</small>
-    <label class="field-label" for="baseUrlInput">接口地址</label><input id="baseUrlInput" type="url" value="https://www.geeknow.top" required><small class="input-note">例如 https://grsaiapi.com 或 https://www.geeknow.top。填写基础地址即可。</small>
-    <div class="modal-actions"><button type="button" class="ghost-button" id="clearKeyButton">清除 Key</button><div class="settings-actions"><button type="button" class="ghost-button" id="verifyKeyButton">测试连接</button><button type="submit" class="primary-button">保存设置</button></div></div>
-  </form></dialog>
+  <dialog id="settingsDialog" class="modal channel-modal" aria-labelledby="settingsTitle">
+    <form method="dialog" id="settingsForm">
+      <div class="modal-head"><h2 id="settingsTitle">接口渠道</h2><button class="modal-close" id="closeSettingsDialog" type="button" aria-label="关闭">×</button></div>
+      <label class="field-label" for="channelSelect">选择渠道</label>
+      <select id="channelSelect"></select>
+      <details id="advancedChannel" class="advanced-channel">
+        <summary>高级设置</summary>
+        <label class="custom-channel-toggle"><input id="useCustomChannel" type="checkbox"> 使用自定义接口</label>
+        <label class="field-label" for="baseUrlInput">接口地址</label>
+        <input id="baseUrlInput" type="url" placeholder="https://">
+      </details>
+      <label class="field-label" for="apiKeyInput">API Key</label>
+      <div id="keyStoredRow" class="key-stored-row" hidden><span id="keyStoredNote">已保存</span><button type="button" class="ghost-button" id="editKey">更换</button></div>
+      <div class="password-wrap" id="keyEditor"><input id="apiKeyInput" type="password" autocomplete="off" placeholder="粘贴当前渠道的 API Key"><button type="button" id="toggleKey">显示</button></div>
+      <p id="channelMessage" class="input-note" role="status"></p>
+      <div class="modal-actions"><button type="button" class="ghost-button" id="clearKeyButton">清除 Key</button><div class="settings-actions"><button type="button" class="ghost-button" id="verifyKeyButton">测试连接</button><button type="submit" id="saveChannel" class="primary-button">保存并使用</button></div></div>
+    </form>
+  </dialog>
+  <dialog id="announcementDialog" class="announcement-modal" aria-labelledby="announcementTitle" aria-describedby="announcementBody">
+    <div class="announcement-heading"><span aria-hidden="true">✦</span><div><p>画境公告</p><h2 id="announcementTitle"></h2></div></div>
+    <div id="announcementBody" class="announcement-body" tabindex="0"></div>
+    <p id="announcementMessage" role="status"></p>
+    <div class="announcement-footer"><time id="announcementTime"></time><button id="readAnnouncement" class="primary-button" type="button">我已阅读</button></div>
+  </dialog>
   <dialog id="updateDialog" class="modal update-modal" aria-labelledby="updateTitle"><div class="modal-head"><div><span class="eyebrow">APP UPDATE</span><h2 id="updateTitle">发现新版本</h2></div><button class="modal-close" id="closeUpdateDialog" type="button" aria-label="关闭">×</button></div><p class="modal-intro" id="updateDescription">新版本已经发布，你可以选择何时更新。</p><div class="update-notes"><strong>本次更新内容</strong><div id="updateNotesText">正在读取更新说明…</div></div><div class="modal-actions"><button type="button" class="ghost-button" id="updateLaterButton">稍后再说</button><button type="button" class="primary-button" id="updateActionButton">下载更新</button></div></dialog>
   <dialog id="imagePreviewDialog" class="image-preview-dialog" aria-label="图片预览"><div class="image-preview-toolbar"><span id="imagePreviewTitle">图片预览</span><button id="closeImagePreview" type="button" aria-label="关闭图片预览">×</button></div><div class="image-preview-stage"><img id="imagePreview" alt="放大的图片"></div></dialog>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>

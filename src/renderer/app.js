@@ -40,61 +40,156 @@ function applyWallpaper(wallpaper){
 function renderModelSync(){
   if(!state.settings)return;
   const settings=state.settings;
-  const provider=settings.provider==='grsai'?'Grsai':settings.provider==='geeknow'?'Geeknow':'自定义接口';
-  $('settingsTitle').textContent='连接 '+provider+' API';
-  const count=state.view==='image'?state.imageModels.length:state.videoModels.length;
-  $('modelCount').textContent=(settings.syncedAt?'已同步 ':'当前 ')+count+' 个模型';
-  $('modelSyncStatus').textContent=settings.supported===false?
-    '此端口缺少可识别的模型或参数接口，需要适配；已保留之前的模型列表，生成暂不可用。':
-    settings.syncedAt?'模型来源：'+settings.source+' · 上次同步 '+new Date(settings.syncedAt).toLocaleString('zh-CN')+
-      (settings.unsupportedCount?' · '+settings.unsupportedCount+' 个模型参数待适配':''):
-      '正在使用已知模型配置，点击“同步模型”刷新此端口的可用列表。';
-  $('generateButton').disabled=settings.supported===false || currentModel()?.adapter==='unsupported';
+  const model=currentModel();
+  const count=currentModels().filter(item=>item.adapter!=='unsupported').length;
+  $('modelCount').textContent=count+' 个可选模型';
+  $('modelSyncStatus').textContent=!settings.hasKey?'请先保存当前渠道的 API Key。':
+    state.view==='video'&&model?.adapter==='unsupported'?'当前渠道的视频接口待适配。':
+    settings.syncedAt?'上次同步 '+new Date(settings.syncedAt).toLocaleString('zh-CN')+
+      (settings.unsupportedCount?' · '+settings.unsupportedCount+' 个模型待适配':''):
+    count?'点击「同步模型」可刷新列表。':'当前渠道没有可用模型，请同步模型。';
+  $('generateButton').disabled=!model||model.adapter==='unsupported'||settings.supported===false;
 }
 function applyModelSnapshot(snapshot){
+  const sameChannel=state.settings?.baseUrl===snapshot.settings.baseUrl;
   state.settings=snapshot.settings;
   state.imageModels=snapshot.imageModels;
   state.videoModels=snapshot.videoModels;
-  if(!currentModels().some(model=>model.id===state.modelId))state.modelId=currentModels()[0]?.id;
-  renderConnection();renderModels();
+  if(!sameChannel){
+    state.modelId=state.settings.selectedModels?.[state.view]||null;
+    state.resolutionsByModel={};
+  }else if(!currentModels().some(model=>model.id===state.modelId)){
+    state.modelId=state.settings.selectedModels?.[state.view]||null;
+  }
+  renderConnection();
+  renderModels();
 }
 
+let latestLicense;
+let activationBusy=false;
+let announcementRevision=0;
+let displayedAnnouncement=null;
 function showActivation(license){
   document.querySelector('.app-shell').hidden=true;
   $('workspaceWallpaper').hidden=true;
   $('activationScreen').hidden=false;
   syncWallpaperPlayback();
+  const status=license.status;
+  const ready=license.active;
+  const checking=status==='checking';
+  const awaiting=status==='pending';
+  const serviceError=!license.active&&(status==='approved'||license.message?.startsWith('审批服务暂不可用'));
+  $('activationTitle').textContent=awaiting?'等待管理员审批':'开启你的创作空间';
+  $('activationIntro').textContent=ready?'已批准的设备，点击登录即可进入工作台。':
+    awaiting?'批准后这里会自动出现登录按钮。':
+    checking||serviceError?'正在核验这台设备的使用权限。':'用用户名和密码注册这台设备。';
   $('machineCodeValue').textContent=license.machineCode||'机器码读取失败';
   $('copyMachineCode').disabled=!license.machineCode;
-  $('activationSubmit').disabled=!license.machineCode;
-  const message=$('activationMessage');message.textContent=license.message||'填写用户名和密码提交申请';message.className='activation-message';
+  $('activationForm').hidden=ready||awaiting||checking||serviceError;
+  $('activationLogin').hidden=!ready;
+  $('activationSubmit').disabled=activationBusy||!license.machineCode;
+  $('activationLogin').disabled=activationBusy;
+  $('activationRefresh').hidden=!awaiting&&!serviceError;
+  $('activationRefresh').disabled=activationBusy;
+  $('activationSubmit').textContent=activationBusy?'正在提交…':'提交注册';
+  $('activationLogin').textContent=activationBusy?'正在核验…':'登录';
+  const message=$('activationMessage');
+  message.textContent=license.message||'';
+  message.className='activation-message';
 }
-function showWorkspace(){ $('activationScreen').hidden=true;$('workspaceWallpaper').hidden=false;document.querySelector('.app-shell').hidden=false;syncWallpaperPlayback(); }
+function showWorkspace(){
+  $('activationScreen').hidden=true;
+  $('workspaceWallpaper').hidden=false;
+  document.querySelector('.app-shell').hidden=false;
+  syncWallpaperPlayback();
+}
+function updateLicense(status){
+  latestLicense=status;
+  if(!status.loggedIn&&!activationBusy)showActivation(status);
+}
+function errorMessage(error){
+  return String(error?.message||error).replace(/^Error invoking remote method '[^']+': Error: /,'');
+}
+async function withActivation(action){
+  if(activationBusy)return;
+  activationBusy=true;
+  if(latestLicense)showActivation(latestLicense);
+  let failure='';
+  try{await action();}
+  catch(error){failure=errorMessage(error);}
+  finally{
+    activationBusy=false;
+    if(!$('activationScreen').hidden&&latestLicense)showActivation(latestLicense);
+    if(failure){
+      $('activationMessage').textContent=failure;
+      $('activationMessage').className='activation-message error';
+    }
+  }
+}
+function renderAnnouncement(item){
+  displayedAnnouncement=item;
+  const dialog=$('announcementDialog');
+  if(!item){if(dialog.open)dialog.close();return;}
+  closeSmoothSelect();
+  $('announcementTitle').textContent=item.title;
+  $('announcementBody').textContent=item.content;
+  $('announcementBody').scrollTop=0;
+  $('announcementTime').textContent=new Date(item.publishedAt).toLocaleString('zh-CN');
+  $('announcementTime').dateTime=item.publishedAt;
+  $('announcementMessage').textContent='';
+  if(!dialog.open)dialog.showModal();
+}
 function bindActivation(){
-  $('maintenanceContinue').addEventListener('click',async()=>{
-    const button=$('maintenanceContinue');button.disabled=true;
-    try{
-      const init=await window.workbench.init();
-      localStorage.setItem('workbench-maintenance-0.2.3','seen');
-      $('maintenanceScreen').hidden=true;
-      if(init.license.active)initializeWorkspace(init);else showActivation(init.license);
-    }catch(error){$('maintenanceMessage').textContent=error.message;button.disabled=false;}
-  });
   window.workbench.onWallpaper(applyWallpaper);
-  $('copyMachineCode').addEventListener('click',async()=>{try{await window.workbench.copyMachineCode();$('activationMessage').textContent='机器码已复制';$('activationMessage').className='activation-message success';}catch(error){$('activationMessage').textContent=error.message;$('activationMessage').className='activation-message error';}});
-  $('activationForm').addEventListener('submit',async event=>{
-    event.preventDefault();const button=$('activationSubmit');const message=$('activationMessage');button.disabled=true;button.textContent='正在提交申请…';message.textContent='正在连接审批服务';message.className='activation-message';
-    try{const status=await window.workbench.submitApplication({username:$('applicantUsername').value,password:$('applicantPassword').value});$('applicantPassword').value='';showActivation(status);}
-    catch(error){message.textContent=(error.message||'激活失败').replace(/^Error invoking remote method '[^']+': Error: /,'');message.className='activation-message error';}
-    finally{button.disabled=false;button.innerHTML='提交使用申请 <span>↗</span>';}
+  window.workbench.onUpdate(data=>{
+    renderUpdate(data);
+    if(data.state==='ready'&&$('activationScreen').hidden)toast('新版本 '+data.version+' 已下载，可选择重启安装');
   });
-  window.workbench.onLicense(async status=>{if(!status.active)showActivation(status);else if(!workspaceBound){const init=await window.workbench.init();initializeWorkspace(init);}else if(!$('activationScreen').hidden)showWorkspace();});
+  $('announcementDialog').addEventListener('close',()=>{if($('activationScreen').hidden)renderUpdate(state.update);});
+  window.workbench.onLicense(updateLicense);
+  window.workbench.onAnnouncement(item=>{announcementRevision++;renderAnnouncement(item);});
+  $('announcementDialog').addEventListener('cancel',event=>event.preventDefault());
+  $('readAnnouncement').addEventListener('click',async()=>{
+    const id=displayedAnnouncement?.id;
+    if(!id)return;
+    const button=$('readAnnouncement');
+    button.disabled=true;
+    const revision=announcementRevision;
+    try{
+      const next=await window.workbench.readAnnouncement(id);
+      if(announcementRevision===revision)renderAnnouncement(next);
+    }catch(error){$('announcementMessage').textContent=errorMessage(error);}
+    finally{button.disabled=false;}
+  });
+  $('copyMachineCode').addEventListener('click',async()=>{
+    try{await window.workbench.copyMachineCode();$('activationMessage').textContent='机器码已复制';}
+    catch(error){$('activationMessage').textContent=errorMessage(error);}
+  });
+  $('activationRefresh').addEventListener('click',()=>withActivation(async()=>updateLicense(await window.workbench.refreshApplication())));
+  $('activationLogin').addEventListener('click',()=>withActivation(async()=>{
+    const init=await window.workbench.login();
+    if(!init.license.loggedIn||latestLicense&&!latestLicense.active)throw new Error('请重新核验设备状态');
+    latestLicense=init.license;
+    initializeWorkspace(init);
+  }));
+  $('activationForm').addEventListener('submit',event=>{
+    event.preventDefault();
+    void withActivation(async()=>{
+      const status=await window.workbench.submitApplication({username:$('applicantUsername').value,password:$('applicantPassword').value});
+      $('applicantPassword').value='';
+      updateLicense(status);
+    });
+  });
 }
 function initializeWorkspace(init){
-  Object.assign(state,{settings:init.settings,imageModels:init.imageModels,videoModels:init.videoModels,presets:init.presets,history:init.history});
-  $('versionLabel').textContent=`v${init.version}`;renderConnection();renderRatios();renderModels();renderHistory();
+  state.presets=init.presets;
+  state.history=init.history;
+  $('versionLabel').textContent='v'+init.version;
+  applyModelSnapshot(init);
+  renderHistory();
   if(!workspaceBound){bindEvents();workspaceBound=true;}
   showWorkspace();
+  renderUpdate(state.update);
 }
 
 function setTheme(theme){
@@ -131,7 +226,7 @@ function renderUpdate(data){
     title.textContent=`发现新版本 v${status.version}`;
     description.textContent='新版本已发布。点击下载更新，或选择稍后再说；当前工作不会被打断。';
     action.textContent='下载更新';
-    if(!dialog.open&&state.dismissedUpdateVersion!==status.version)dialog.showModal();
+    if($('activationScreen').hidden&&!$('announcementDialog').open&&!dialog.open&&state.dismissedUpdateVersion!==status.version)dialog.showModal();
   }else if(status.state==='downloading'){
     button.textContent=`下载更新 ${status.percent||0}%`;
     title.textContent='正在下载更新';
@@ -142,7 +237,7 @@ function renderUpdate(data){
     title.textContent=`v${status.version} 已准备就绪`;
     description.textContent='点击“重启并安装”立即更新。你也可以稍后手动更新，关闭应用不会自动安装。';
     action.textContent='重启并安装';
-    if(!dialog.open&&state.dismissedReadyVersion!==status.version)dialog.showModal();
+    if($('activationScreen').hidden&&!$('announcementDialog').open&&!dialog.open&&state.dismissedReadyVersion!==status.version)dialog.showModal();
   }else if(status.state==='error'){
     button.textContent='更新遇到问题';
     title.textContent='更新未完成';
@@ -184,7 +279,7 @@ function openSelect(item){
   selected?.scrollIntoView({block:'nearest'});
 }
 function moveSmoothFocus(item,key){
-  const options=Array.from(item.menu.querySelectorAll('.smooth-select-option'));
+  const options=Array.from(item.menu.querySelectorAll('.smooth-select-option:not(:disabled)'));
   if(!options.length)return;
   let index=options.indexOf(document.activeElement);
   if(index<0)index=options.findIndex(option=>option.getAttribute('aria-selected')==='true');
@@ -227,9 +322,158 @@ function syncSmoothSelect(id){
 document.addEventListener('click',event=>{if(openSmoothSelect&&!openSmoothSelect.trigger.contains(event.target)&&!openSmoothSelect.menu.contains(event.target))closeSmoothSelect();});
 window.addEventListener('resize',()=>{if(openSmoothSelect)positionSmoothSelect(openSmoothSelect);});
 document.addEventListener('scroll',()=>{if(openSmoothSelect)positionSmoothSelect(openSmoothSelect);},true);
+let keyInfoRevision=0;
+let channelBusy=false;
+let channelHasKey=false;
+function channelInput(){
+  return $('useCustomChannel').checked?
+    {channelId:'custom',baseUrl:$('baseUrlInput').value.trim()}:{channelId:$('channelSelect').value};
+}
+function resetChannelKey(){
+  $('apiKeyInput').value='';
+  $('apiKeyInput').type='password';
+  $('toggleKey').textContent='显示';
+  $('keyStoredRow').hidden=true;
+  $('keyEditor').hidden=false;
+  channelHasKey=false;
+  $('clearKeyButton').disabled=true;
+}
+function showChannelKey({hasKey,keyTail}){
+  channelHasKey=hasKey;
+  $('keyStoredRow').hidden=!hasKey;
+  $('keyEditor').hidden=hasKey;
+  $('keyStoredNote').textContent=hasKey?'已保存 · 尾号 '+keyTail:'';
+  $('clearKeyButton').disabled=!hasKey||channelBusy;
+}
+async function inspectChannelKey(){
+  const revision=++keyInfoRevision;
+  const input=channelInput();
+  if(!input.channelId||input.channelId==='custom'&&!input.baseUrl)return;
+  try{
+    const info=await window.workbench.keyInfo(input);
+    if(revision===keyInfoRevision&&$('settingsDialog').open)showChannelKey(info);
+  }catch{}
+}
+function updateChannelPicker(){
+  const custom=$('useCustomChannel').checked;
+  $('baseUrlInput').disabled=!custom||channelBusy;
+  $('baseUrlInput').required=custom;
+  $('channelSelect').required=!custom;
+  $('channelSelect').disabled=channelBusy;
+  $('useCustomChannel').disabled=channelBusy;
+  if(custom)$('channelSelect').value='';
+}
+function openChannelSettings(){
+  const dialog=$('settingsDialog');
+  if(dialog.open)return;
+  const select=$('channelSelect');
+  select.replaceChildren();
+  const placeholder=new Option('请选择渠道','');
+  placeholder.disabled=true;
+  placeholder.hidden=true;
+  select.add(placeholder);
+  for(const {id,label} of state.settings.channels)select.add(new Option(label,id));
+  const custom=state.settings.channelId==='custom';
+  const configuredCustom=custom&&state.settings.hasKey;
+  $('advancedChannel').open=configuredCustom;
+  $('useCustomChannel').checked=configuredCustom;
+  $('baseUrlInput').value=state.settings.customBaseUrl;
+  select.value=custom?(configuredCustom?'':state.settings.channels[0]?.id||''):state.settings.channelId;
+  $('channelMessage').textContent='';
+  resetChannelKey();
+  updateChannelPicker();
+  dialog.showModal();
+  void inspectChannelKey();
+}
+async function withChannelForm(task){
+  if(channelBusy)return;
+  const input={...channelInput(),apiKey:$('apiKeyInput').value};
+  if(!input.channelId||input.channelId==='custom'&&!input.baseUrl){
+    $('channelMessage').textContent='请选择渠道或填写自定义接口地址。';
+    return;
+  }
+  channelBusy=true;
+  keyInfoRevision++;
+  updateChannelPicker();
+  const controls=[$('saveChannel'),$('verifyKeyButton'),$('clearKeyButton'),$('editKey'),$('apiKeyInput')];
+  for(const button of controls)button.disabled=true;
+  $('channelMessage').textContent='正在处理…';
+  try{await task(input);}
+  catch(error){$('channelMessage').textContent=errorMessage(error);}
+  finally{
+    channelBusy=false;
+    for(const button of controls)button.disabled=false;
+    $('clearKeyButton').disabled=!channelHasKey;
+    updateChannelPicker();
+  }
+}
+function bindChannelSettings(){
+  $('settingsButton').addEventListener('click',openChannelSettings);
+  $('closeSettingsDialog').addEventListener('click',()=>{if(!channelBusy)$('settingsDialog').close();});
+  $('settingsDialog').addEventListener('cancel',event=>{if(channelBusy)event.preventDefault();});
+  $('settingsDialog').addEventListener('close',()=>{keyInfoRevision++;resetChannelKey();});
+  const selectionChanged=()=>{
+    $('channelMessage').textContent='';
+    resetChannelKey();
+    updateChannelPicker();
+    void inspectChannelKey();
+  };
+  $('channelSelect').addEventListener('change',()=>{
+    $('useCustomChannel').checked=false;
+    $('advancedChannel').open=false;
+    selectionChanged();
+  });
+  $('useCustomChannel').addEventListener('change',()=>{
+    if(!$('useCustomChannel').checked)$('channelSelect').selectedIndex=1;
+    selectionChanged();
+  });
+  $('baseUrlInput').addEventListener('input',()=>{
+    keyInfoRevision++;
+    resetChannelKey();
+  });
+  $('baseUrlInput').addEventListener('change',()=>void inspectChannelKey());
+  $('editKey').addEventListener('click',()=>{
+    $('keyEditor').hidden=false;
+    $('apiKeyInput').focus();
+  });
+  $('toggleKey').addEventListener('click',()=>{
+    const field=$('apiKeyInput');
+    field.type=field.type==='password'?'text':'password';
+    $('toggleKey').textContent=field.type==='password'?'显示':'隐藏';
+  });
+  $('settingsForm').addEventListener('submit',event=>{
+    event.preventDefault();
+    void withChannelForm(async input=>{
+      const result=await window.workbench.saveSettings(input);
+      applyModelSnapshot(result);
+      if(result.syncError){
+        resetChannelKey();
+        showChannelKey(result.settings);
+        $('channelMessage').textContent='设置已保存，模型同步失败：'+result.syncError;
+        return;
+      }
+      $('settingsDialog').close();
+      toast(result.settings.hasKey?'设置已保存，已同步 '+result.imageModels.length+' 个可选模型':'已切换接口');
+    });
+  });
+  $('verifyKeyButton').addEventListener('click',()=>withChannelForm(async input=>{
+    const result=await window.workbench.verifySettings(input);
+    $('channelMessage').textContent=result.authVerified?
+      'Key 可读取模型列表，找到 '+result.modelCount+' 个已适配模型。':
+      '已读取 '+result.modelCount+' 个公开模型。Key 的生成权限会在实际生成时核验。';
+  }));
+  $('clearKeyButton').addEventListener('click',()=>withChannelForm(async input=>{
+    const result=await window.workbench.saveSettings({...input,apiKey:'',clearKey:true});
+    applyModelSnapshot(result);
+    resetChannelKey();
+    $('channelMessage').textContent='已清除该渠道的 API Key。';
+  }));
+}
+
 function renderConnection() {
-  const el=$('connectionPill');el.classList.toggle('connected',state.settings.hasKey);el.lastChild.textContent=state.settings.hasKey?` Key 已保存 ···${state.settings.keyTail}`:' 尚未设置 API';
-  $('keyStoredNote').textContent=state.settings.hasKey?`已安全保存尾号 ···${state.settings.keyTail}；留空可保持原 Key`:'还未设置 API Key';
+  const el=$('connectionPill');
+  el.classList.toggle('connected',state.settings.hasKey);
+  el.lastChild.textContent=' '+state.settings.channelLabel+(state.settings.hasKey?' · Key 已保存':' · 未设置 Key');
 }
 function renderModels() {
   const models=currentModels();const select=$('modelSelect');select.replaceChildren();
@@ -237,16 +481,29 @@ function renderModels() {
     const group=document.createElement('optgroup');group.label=family;
     for(const model of models.filter(m=>m.family===family)){const option=document.createElement('option');option.value=model.id;option.textContent=model.label;group.append(option);}select.append(group);
   }
-  if(!models.some(m=>m.id===state.modelId))state.modelId=models[0].id;
+  if(state.view==='image'&&state.settings.unsupportedModels?.length){
+    const group=document.createElement('optgroup');
+    group.label='待适配';
+    for(const id of state.settings.unsupportedModels){
+      const option=new Option(id+' · 待适配',id);
+      option.disabled=true;
+      group.append(option);
+    }
+    select.append(group);
+  }
+  if(!models.some(m=>m.id===state.modelId))state.modelId=models[0]?.id;
   select.value=state.modelId;
   syncSmoothSelect('modelSelect');
-  const model=currentModel();$('modelName').textContent=model.label;$('modelFamily').textContent=model.family.toUpperCase();
-  $('modelDesc').textContent=model.description|| (model.requiredRefs?'此模型必须上传参考图':model.refs?'支持文字与参考图创作':'仅支持文字提示词创作');
-  $('referenceHint').textContent=model.requiredRefs?'必填 · 请添加参考图':model.refs?'可选 · 支持多图':'此模型不支持参考图';
-  $('addReference').disabled=!model.refs;
+  const model=currentModel();
+  $('modelName').textContent=model?.label||'暂无可用模型';
+  $('modelFamily').textContent=(model?.family||'').toUpperCase();
+  $('modelDesc').textContent=!model?'请切换渠道或同步模型。':model.description|| (model.requiredRefs?'此模型必须上传参考图':model?.refs?'支持文字与参考图创作':'仅支持文字提示词创作');
+  $('referenceHint').textContent=model?.requiredRefs?'必填 · 请添加参考图':model?.refs?'可选 · 支持多图':'此模型不支持参考图';
+  $('addReference').disabled=!model?.refs;
   const seconds=$('secondsSelect');seconds.replaceChildren();
-  if(state.view==='video')for(const n of model.seconds){const o=document.createElement('option');o.value=n;o.textContent=n;seconds.append(o);}
+  if(state.view==='video')for(const n of model?.seconds||[]){const o=document.createElement('option');o.value=n;o.textContent=n;seconds.append(o);}
   $('secondsLabel').hidden=state.view!=='video';
+  renderRatios();
   renderResolutions();
   updateSizeNote();
   renderModelSync();
@@ -255,10 +512,10 @@ function renderResolutions(){
   const section=$('resolutionSection');section.hidden=state.view!=='image';
   $('videoResolvedSize').hidden=state.view!=='video';
   if(state.view!=='image')return;
-  const model=currentModel();const options=model.resolutions||['default'];
-  const saved=state.resolutionsByModel[model.id];
-  state.resolutionId=options.includes(saved)?saved:(model.defaultResolution||options[0]);
-  state.resolutionsByModel[model.id]=state.resolutionId;
+  const model=currentModel();const options=model?.resolutions||(model?['default']:[]);
+  const saved=state.resolutionsByModel[model?.id];
+  state.resolutionId=options.includes(saved)?saved:(model?.defaultResolution||options[0]);
+  if(model)state.resolutionsByModel[model.id]=state.resolutionId;
   const select=$('resolutionSelect');select.replaceChildren();
   for(const resolution of options){const option=document.createElement('option');option.value=resolution;option.textContent=resolution==='default'?'模型默认':resolution;select.append(option);}
   select.value=state.resolutionId;
@@ -266,7 +523,10 @@ function renderResolutions(){
 }
 function renderRatios() {
   const grid=$('ratioGrid');grid.replaceChildren();
-  for(const preset of state.presets){
+  const model=currentModel();
+  const options=model&&model.adapter!=='unsupported'?state.presets.filter(preset=>preset.id==='auto'||model.ratios.includes(preset.id)):[];
+  if(!options.some(preset=>preset.id===state.presetId))state.presetId='auto';
+  for(const preset of options){
     const option=document.createElement('option');option.value=preset.id;
     option.textContent=preset.id==='auto'?'auto · 自动识别':preset.label;
     grid.append(option);
@@ -276,8 +536,12 @@ function renderRatios() {
 }
 function referenceDimensions(){return state.references[0]?{width:state.references[0].width,height:state.references[0].height}:null;}
 async function updateSizeNote() {
-  const model=currentModel();if(!model)return;
+  const model=currentModel();
   const request=++sizeNoteRequest;const view=state.view;
+  if(!model||model.adapter==='unsupported'){
+    $('resolvedSize').textContent=$('videoResolvedSize').textContent='实际提交尺寸：—';
+    return;
+  }
   try{const result=await window.workbench.resolveSize({modelId:model.id,presetId:state.presetId,resolutionId:state.view==='image'?state.resolutionId:undefined,prompt:$('promptInput').value,referenceDimensions:referenceDimensions()});
     if(!result||request!==sizeNoteRequest)return;
     const label=result.size?`实际提交尺寸：${result.size} · 比例 ${result.ratio}`:`实际提交比例：${result.ratio}`;
@@ -286,8 +550,9 @@ async function updateSizeNote() {
 }
 function renderReferences(){const host=$('referenceList');host.replaceChildren();for(const r of state.references){const card=document.createElement('div');card.className='reference-card';const img=document.createElement('img');img.src=r.preview;img.alt=r.name;img.title='双击查看参考图';img.tabIndex=0;img.setAttribute('role','button');img.setAttribute('aria-label',`查看参考图：${r.name}`);img.addEventListener('dblclick',()=>showImagePreview(r.preview,r.name,'参考图'));img.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();showImagePreview(r.preview,r.name,'参考图');}});const remove=document.createElement('button');remove.type='button';remove.textContent='×';remove.title='移除参考图';remove.setAttribute('aria-label',`移除参考图：${r.name}`);remove.addEventListener('click',()=>{window.workbench.clearReferences([r.id]);state.references=state.references.filter(x=>x.id!==r.id);renderReferences();updateSizeNote();});card.append(img,remove);host.append(card);}}
 async function appendReferences(found){for(const item of found){const img=new Image();img.src=item.preview;try{await img.decode();}catch{await window.workbench.clearReferences(found.map(ref=>ref.id));throw new Error(`${item.name} 无法作为图片打开`);}item.width=img.naturalWidth;item.height=img.naturalHeight;}state.references.push(...found);renderReferences();updateSizeNote();}
-async function addDroppedReferences(fileList){const files=Array.from(fileList);if(!files.length)return;if(!currentModel().refs)throw new Error('当前模型不支持参考图');if(state.references.length+files.length>10)throw new Error('参考图最多支持 10 张，请先移除多余图片');const inputs=[];for(const file of files){if(!/\.(png|jpe?g|webp)$/i.test(file.name))throw new Error('参考图仅支持 PNG、JPG、WEBP 格式');if(!file.size||file.size>10*1024*1024)throw new Error(`${file.name} 必须小于 10 MB 且不能为空`);inputs.push({name:file.name,bytes:new Uint8Array(await file.arrayBuffer())});}const found=await window.workbench.addReferences(inputs);await appendReferences(found);toast(`已添加 ${found.length} 张参考图`);}
+async function addDroppedReferences(fileList){const files=Array.from(fileList);if(!files.length)return;if(!currentModel()?.refs)throw new Error('当前模型不支持参考图');if(state.references.length+files.length>10)throw new Error('参考图最多支持 10 张，请先移除多余图片');const inputs=[];for(const file of files){if(!/\.(png|jpe?g|webp)$/i.test(file.name))throw new Error('参考图仅支持 PNG、JPG、WEBP 格式');if(!file.size||file.size>10*1024*1024)throw new Error(`${file.name} 必须小于 10 MB 且不能为空`);inputs.push({name:file.name,bytes:new Uint8Array(await file.arrayBuffer())});}const found=await window.workbench.addReferences(inputs);await appendReferences(found);toast(`已添加 ${found.length} 张参考图`);}
 function setView(view) {
+  if(state.view!==view&&['image','video'].includes(view))state.modelId=state.settings.selectedModels?.[view]||null;
   state.view=view;document.querySelectorAll('.nav-item').forEach(x=>x.classList.toggle('active',x.dataset.view===view));
   const history=view==='history';$('creationView').hidden=history;$('historyView').hidden=!history;
   $('breadcrumbCurrent').textContent=view==='video'?'BRING IDEAS TO LIFE':'CREATE SOMETHING NEW';
@@ -394,7 +659,7 @@ function renderHistory(){
   }
 }
 async function saveMedia(record,index){try{const done=await window.workbench.saveResult(record.id,index);if(done)toast('作品已永久保存到所选位置');}catch(e){toast(e.message);}}
-async function doGenerate(){if(!state.settings.hasKey){$('settingsDialog').showModal();toast('请先设置 API Key');return;}const model=currentModel();const prompt=$('promptInput').value.trim();if(!prompt){toast('请先填写提示词');$('promptInput').focus();return;}if(model.requiredRefs&&!state.references.length){toast('该模型需要参考图');return;}if(state.references.length&&!model.refs){toast('该模型不支持参考图');return;}
+async function doGenerate(){if(!state.settings.hasKey){openChannelSettings();return;}const model=currentModel();if(!model||model.adapter==='unsupported')return;const prompt=$('promptInput').value.trim();if(!prompt){toast('请先填写提示词');$('promptInput').focus();return;}if(model.requiredRefs&&!state.references.length){toast('该模型需要参考图');return;}if(state.references.length&&!model.refs){toast('该模型不支持参考图');return;}
   if(Date.now()-state.lastSubmitAt<600)return;
   state.lastSubmitAt=Date.now();
   const input={type:state.view,modelId:model.id,prompt,presetId:state.presetId,resolutionId:state.view==='image'?state.resolutionId:undefined,referenceIds:state.references.map(r=>r.id),referenceDimensions:referenceDimensions(),seconds:Number($('secondsSelect').value)};
@@ -421,7 +686,10 @@ function bindEvents(){document.querySelectorAll('.nav-item').forEach(b=>b.addEve
   $('updateActionButton').addEventListener('click',async()=>{const status=state.update.state;try{if(status==='available'){renderUpdate({state:'downloading',percent:0});await window.workbench.downloadUpdate();}else if(status==='ready')await window.workbench.installUpdate();else if(status==='error')await window.workbench.checkUpdates();}catch(error){renderUpdate({state:'error',message:error.message});toast(error.message);}});
   window.workbench.onNotice(toast);
   window.workbench.onReferencesExpired(ids=>{state.references=state.references.filter(reference=>!ids.includes(reference.id));renderReferences();updateSizeNote();toast('已生成图片超过两小时，相关参考图已移除');});
-  $('promptInput').addEventListener('input',()=>{$('promptCount').textContent=`${$('promptInput').value.length} / 8000`;updateSizeNote();});$('modelSelect').addEventListener('change',e=>{state.modelId=e.target.value;renderModels();});
+  $('promptInput').addEventListener('input',()=>{$('promptCount').textContent=`${$('promptInput').value.length} / 8000`;updateSizeNote();});$('modelSelect').addEventListener('change',e=>{state.modelId=e.target.value;
+    state.settings.selectedModels={...state.settings.selectedModels,[state.view]:state.modelId};
+    void window.workbench.rememberModel({baseUrl:state.settings.baseUrl,type:state.view,modelId:state.modelId}).catch(error=>toast(errorMessage(error)));
+    renderModels();});
   $('ratioGrid').addEventListener('change',e=>{state.presetId=e.target.value;updateSizeNote();});
   $('resolutionSelect').addEventListener('change',e=>{state.resolutionId=e.target.value;state.resolutionsByModel[currentModel().id]=e.target.value;updateSizeNote();});
   $('addReference').addEventListener('click',async()=>{try{await appendReferences(await window.workbench.chooseReferences());}catch(e){toast(e.message);}});
@@ -445,20 +713,29 @@ function bindEvents(){document.querySelectorAll('.nav-item').forEach(b=>b.addEve
   document.addEventListener('dragover',event=>{if(!hasGeneratedImage(event))return;event.preventDefault();event.dataTransfer.dropEffect='none';});
   document.addEventListener('drop',event=>{if(hasGeneratedImage(event)){event.preventDefault();historyDrop.hidden=true;}});
   const hasDraggedFiles=event=>Array.from(event.dataTransfer?.types||[]).includes('Files');
-  document.addEventListener('dragover',event=>{if(hasGeneratedImage(event)||!hasDraggedFiles(event))return;event.preventDefault();const allowed=!$('creationView').hidden&&currentModel()?.refs&&!$('settingsDialog').open&&!$('updateDialog').open&&!$('imagePreviewDialog').open;event.dataTransfer.dropEffect=allowed?'copy':'none';dropzone.classList.toggle('drag-active',!!allowed);});
+  document.addEventListener('dragover',event=>{if(hasGeneratedImage(event)||!hasDraggedFiles(event))return;event.preventDefault();const allowed=$('activationScreen').hidden&&!$('announcementDialog').open&&!$('creationView').hidden&&currentModel()?.refs&&!$('settingsDialog').open&&!$('updateDialog').open&&!$('imagePreviewDialog').open;event.dataTransfer.dropEffect=allowed?'copy':'none';dropzone.classList.toggle('drag-active',!!allowed);});
   document.addEventListener('dragleave',event=>{if(!event.relatedTarget)dropzone.classList.remove('drag-active');});
-  document.addEventListener('drop',async event=>{if(hasGeneratedImage(event)||!hasDraggedFiles(event))return;event.preventDefault();dropzone.classList.remove('drag-active');if($('creationView').hidden||$('settingsDialog').open||$('updateDialog').open||$('imagePreviewDialog').open)return;try{await addDroppedReferences(event.dataTransfer.files);}catch(error){toast(error.message);}});
-  $('generateButton').addEventListener('click',doGenerate);$('settingsButton').addEventListener('click',()=>{$('apiKeyInput').value='';$('baseUrlInput').value=state.settings.baseUrl;renderConnection();$('settingsDialog').showModal();});
-  $('baseUrlInput').addEventListener('input',()=>{$('keyStoredNote').textContent='切换端口时请输入该站点的 API Key；已保存过的端口会自动恢复自己的 Key。';});
-  $('closeSettingsDialog').addEventListener('click',()=>$('settingsDialog').close());
-  $('toggleKey').addEventListener('click',()=>{const input=$('apiKeyInput');input.type=input.type==='password'?'text':'password';$('toggleKey').textContent=input.type==='password'?'显示':'隐藏';});
-  $('settingsForm').addEventListener('submit',async e=>{e.preventDefault();try{const result=await window.workbench.saveSettings({baseUrl:$('baseUrlInput').value,apiKey:$('apiKeyInput').value});applyModelSnapshot(result);$('settingsDialog').close();toast(result.syncError?'设置已保存；模型同步失败：'+result.syncError:'API 设置已保存，模型已同步');}catch(err){toast(err.message);}});
-  $('verifyKeyButton').addEventListener('click',async()=>{const b=$('verifyKeyButton');b.disabled=true;b.textContent='测试中…';try{const result=await window.workbench.verifySettings({baseUrl:$('baseUrlInput').value,apiKey:$('apiKeyInput').value});toast(result.authVerified?'连接成功，当前 Key 可读取 '+result.modelCount+' 个生图模型':'已读取 '+result.modelCount+' 个公开模型；此站点需在首次生成时验证 Key 权限');}catch(e){toast('连接失败：'+e.message);}finally{b.disabled=false;b.textContent='测试连接';}});
-  $('clearKeyButton').addEventListener('click',async()=>{try{applyModelSnapshot(await window.workbench.saveSettings({baseUrl:$('baseUrlInput').value,clearKey:true}));$('apiKeyInput').value='';toast('已清除当前端口保存的 API Key');}catch(e){toast(e.message);}});
+  document.addEventListener('drop',async event=>{if(hasGeneratedImage(event)||!hasDraggedFiles(event))return;event.preventDefault();dropzone.classList.remove('drag-active');if(!$('activationScreen').hidden||$('announcementDialog').open||$('creationView').hidden||$('settingsDialog').open||$('updateDialog').open||$('imagePreviewDialog').open)return;try{await addDroppedReferences(event.dataTransfer.files);}catch(error){toast(error.message);}});
+  $('generateButton').addEventListener('click',doGenerate);
+  bindChannelSettings();
   $('syncModelsButton').addEventListener('click',async()=>{const button=$('syncModelsButton');button.disabled=true;button.textContent='同步中…';try{const result=await window.workbench.syncModels();applyModelSnapshot(result);toast('已同步 '+result.imageModels.length+' 个生图模型'+(result.unsupportedCount?'；'+result.unsupportedCount+' 个需要适配':''));}catch(error){toast('同步失败：'+error.message);}finally{button.disabled=false;button.textContent='同步模型 ↻';}});
   window.workbench.onModels(snapshot=>{applyModelSnapshot(snapshot);});
   window.workbench.onModelSyncError(error=>toast('自动同步模型失败：'+error));
-  window.workbench.onHistory(data=>{state.history=data;renderHistory();});window.workbench.onUpdate(data=>{renderUpdate(data);if(data.state==='ready')toast(`新版本 ${data.version} 已下载，可选择重启安装`);});
+  window.workbench.onHistory(data=>{state.history=data;renderHistory();});
 }
-async function boot(){bindActivation();try{const init=await window.workbench.init();applyWallpaper(init.wallpaper);$('activationVersion').textContent=`画境工作台 v${init.version}`;if(localStorage.getItem('workbench-maintenance-0.2.3')!=='seen'){$('activationScreen').hidden=true;$('maintenanceScreen').hidden=false;syncWallpaperPlayback();return;}if(init.license.active)initializeWorkspace(init);else showActivation(init.license);}catch(e){$('activationMessage').textContent=`启动失败：${e.message}`;$('activationMessage').className='activation-message error';}}
+async function boot(){
+  bindActivation();
+  const revision=announcementRevision;
+  try{
+    const init=await window.workbench.init();
+    applyWallpaper(init.wallpaper);
+    $('activationVersion').textContent='画境工作台 v'+init.version;
+    if(init.license.loggedIn)initializeWorkspace(init);
+    else if(!latestLicense)updateLicense(init.license);
+    if(announcementRevision===revision)renderAnnouncement(init.announcement);
+  }catch(error){
+    $('activationMessage').textContent='启动失败：'+errorMessage(error);
+    $('activationMessage').className='activation-message error';
+  }
+}
 boot();
